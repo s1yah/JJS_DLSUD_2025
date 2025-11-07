@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import mapboxgl from "mapbox-gl";
-import "mapbox-gl/dist/mapbox-gl.css";
+import { useEffect, useState, useCallback } from "react";
+import { GoogleMap, useJsApiLoader, Marker, Polyline } from "@react-google-maps/api";
 import { MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,111 +17,192 @@ interface MapWidgetProps {
   onLocationAdd?: (lat: number, lng: number) => void;
 }
 
+const containerStyle = {
+  width: "100%",
+  height: "100%",
+};
+
+const defaultCenter = {
+  lat: 40.7128,
+  lng: -74.006,
+};
+
+const mapOptions = {
+  styles: [
+    {
+      featureType: "all",
+      elementType: "geometry",
+      stylers: [{ color: "#1a1f2e" }],
+    },
+    {
+      featureType: "all",
+      elementType: "labels.text.fill",
+      stylers: [{ color: "#8b92a3" }],
+    },
+    {
+      featureType: "all",
+      elementType: "labels.text.stroke",
+      stylers: [{ color: "#1a1f2e" }],
+    },
+    {
+      featureType: "water",
+      elementType: "geometry",
+      stylers: [{ color: "#0f1419" }],
+    },
+    {
+      featureType: "road",
+      elementType: "geometry",
+      stylers: [{ color: "#2a3142" }],
+    },
+    {
+      featureType: "poi",
+      elementType: "geometry",
+      stylers: [{ color: "#1f2534" }],
+    },
+  ],
+  disableDefaultUI: false,
+  zoomControl: true,
+  mapTypeControl: false,
+  streetViewControl: false,
+  fullscreenControl: true,
+};
+
 export const MapWidget = ({ buses = [], userLocation, onLocationAdd }: MapWidgetProps) => {
-  const mapContainer = useRef<HTMLDivElement>(null);
-  const map = useRef<mapboxgl.Map | null>(null);
-  const [mapToken, setMapToken] = useState("");
-  const [isTokenSet, setIsTokenSet] = useState(false);
-  const markersRef = useRef<mapboxgl.Marker[]>([]);
+  const [apiKey, setApiKey] = useState("");
+  const [isKeySet, setIsKeySet] = useState(false);
+  const [map, setMap] = useState<google.maps.Map | null>(null);
+  const [routes, setRoutes] = useState<Array<{ path: google.maps.LatLngLiteral[]; busId: string }>>([]);
 
-  const initializeMap = () => {
-    if (!mapContainer.current || !mapToken) return;
+  const { isLoaded } = useJsApiLoader({
+    id: "google-map-script",
+    googleMapsApiKey: apiKey,
+  });
 
-    mapboxgl.accessToken = mapToken;
+  const onLoad = useCallback((map: google.maps.Map) => {
+    setMap(map);
+  }, []);
 
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: "mapbox://styles/mapbox/dark-v11",
-      center: [0, 20],
-      zoom: 2,
-    });
+  const onUnmount = useCallback(() => {
+    setMap(null);
+  }, []);
 
-    map.current.addControl(new mapboxgl.NavigationControl(), "top-right");
-
-    // Add click handler for users to set location
-    if (onLocationAdd) {
-      map.current.on("click", (e) => {
-        onLocationAdd(e.lngLat.lat, e.lngLat.lng);
+  const handleMapClick = useCallback(
+    (e: google.maps.MapMouseEvent) => {
+      if (onLocationAdd && e.latLng) {
+        const lat = e.latLng.lat();
+        const lng = e.latLng.lng();
+        onLocationAdd(lat, lng);
         toast.success("Location added successfully!");
-      });
+      }
+    },
+    [onLocationAdd]
+  );
+
+  // Calculate routes using Google Routes API
+  const calculateRoutes = useCallback(async () => {
+    if (!isKeySet || !userLocation || buses.length === 0) return;
+
+    const newRoutes: Array<{ path: google.maps.LatLngLiteral[]; busId: string }> = [];
+
+    for (const bus of buses) {
+      try {
+        const response = await fetch(
+          "https://routes.googleapis.com/directions/v2:computeRoutes",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Goog-Api-Key": apiKey,
+              "X-Goog-FieldMask": "routes.polyline.encodedPolyline",
+            },
+            body: JSON.stringify({
+              origin: {
+                location: {
+                  latLng: {
+                    latitude: bus.lat,
+                    longitude: bus.lng,
+                  },
+                },
+              },
+              destination: {
+                location: {
+                  latLng: {
+                    latitude: userLocation.lat,
+                    longitude: userLocation.lng,
+                  },
+                },
+              },
+              travelMode: "DRIVE",
+              routingPreference: "TRAFFIC_AWARE",
+              computeAlternativeRoutes: false,
+              languageCode: "en-US",
+              units: "IMPERIAL",
+            }),
+          }
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.routes && data.routes[0]) {
+            const encodedPolyline = data.routes[0].polyline.encodedPolyline;
+            const decodedPath = decodePolyline(encodedPolyline);
+            newRoutes.push({ path: decodedPath, busId: bus.id });
+          }
+        }
+      } catch (error) {
+        console.error(`Error calculating route for bus ${bus.id}:`, error);
+      }
     }
+
+    setRoutes(newRoutes);
+  }, [apiKey, buses, userLocation, isKeySet]);
+
+  useEffect(() => {
+    if (userLocation && buses.length > 0 && isKeySet) {
+      calculateRoutes();
+    }
+  }, [userLocation, buses, calculateRoutes, isKeySet]);
+
+  // Decode Google's encoded polyline format
+  const decodePolyline = (encoded: string): google.maps.LatLngLiteral[] => {
+    const poly: google.maps.LatLngLiteral[] = [];
+    let index = 0;
+    let lat = 0;
+    let lng = 0;
+
+    while (index < encoded.length) {
+      let b;
+      let shift = 0;
+      let result = 0;
+
+      do {
+        b = encoded.charCodeAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+
+      const dlat = result & 1 ? ~(result >> 1) : result >> 1;
+      lat += dlat;
+
+      shift = 0;
+      result = 0;
+
+      do {
+        b = encoded.charCodeAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+
+      const dlng = result & 1 ? ~(result >> 1) : result >> 1;
+      lng += dlng;
+
+      poly.push({ lat: lat / 1e5, lng: lng / 1e5 });
+    }
+
+    return poly;
   };
 
-  useEffect(() => {
-    if (isTokenSet) {
-      initializeMap();
-    }
-
-    return () => {
-      map.current?.remove();
-    };
-  }, [isTokenSet]);
-
-  // Update markers when buses change
-  useEffect(() => {
-    if (!map.current || !isTokenSet) return;
-
-    // Clear existing markers
-    markersRef.current.forEach((marker) => marker.remove());
-    markersRef.current = [];
-
-    // Add bus markers
-    buses.forEach((bus) => {
-      const el = document.createElement("div");
-      el.className = "bus-marker";
-      el.innerHTML = `
-        <div class="flex flex-col items-center">
-          <div class="bg-primary rounded-full p-2 shadow-glow animate-pulse-glow">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
-              <rect x="3" y="6" width="18" height="12" rx="2" />
-              <path d="M3 10h18" />
-              <circle cx="8" cy="16" r="1" />
-              <circle cx="16" cy="16" r="1" />
-            </svg>
-          </div>
-          <div class="bg-card text-card-foreground px-2 py-1 rounded text-xs mt-1 shadow-card">
-            ${bus.name}
-          </div>
-        </div>
-      `;
-
-      const marker = new mapboxgl.Marker(el)
-        .setLngLat([bus.lng, bus.lat])
-        .setPopup(
-          new mapboxgl.Popup({ offset: 25 }).setHTML(
-            `<div class="p-2">
-              <h3 class="font-bold">${bus.name}</h3>
-              <p>Passengers: ${bus.passengers}</p>
-            </div>`
-          )
-        )
-        .addTo(map.current);
-
-      markersRef.current.push(marker);
-    });
-
-    // Add user location marker if exists
-    if (userLocation) {
-      const el = document.createElement("div");
-      el.className = "user-marker";
-      el.innerHTML = `
-        <div class="bg-accent rounded-full p-2 shadow-glow">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
-            <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
-            <circle cx="12" cy="10" r="3" />
-          </svg>
-        </div>
-      `;
-
-      const marker = new mapboxgl.Marker(el)
-        .setLngLat([userLocation.lng, userLocation.lat])
-        .addTo(map.current);
-
-      markersRef.current.push(marker);
-    }
-  }, [buses, userLocation, isTokenSet]);
-
-  if (!isTokenSet) {
+  if (!isKeySet) {
     return (
       <div className="h-full flex items-center justify-center bg-card rounded-xl border border-border p-8">
         <div className="max-w-md w-full space-y-4">
@@ -130,32 +210,35 @@ export const MapWidget = ({ buses = [], userLocation, onLocationAdd }: MapWidget
             <MapPin className="h-12 w-12 text-primary mx-auto" />
             <h3 className="text-xl font-bold text-foreground">Map Setup Required</h3>
             <p className="text-sm text-muted-foreground">
-              Enter your Mapbox public token to enable the map widget. Get your token at{" "}
+              Enter your Google Maps API key to enable the map widget. Get your key at{" "}
               <a
-                href="https://mapbox.com"
+                href="https://console.cloud.google.com/google/maps-apis"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-primary hover:underline"
               >
-                mapbox.com
+                Google Cloud Console
               </a>
+            </p>
+            <p className="text-xs text-muted-foreground mt-2">
+              Make sure to enable Maps JavaScript API and Routes API in your Google Cloud project.
             </p>
           </div>
           <div className="space-y-2">
             <Input
               type="text"
-              placeholder="pk.eyJ1IjoiZXhhbXBsZS..."
-              value={mapToken}
-              onChange={(e) => setMapToken(e.target.value)}
+              placeholder="AIzaSy..."
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
               className="font-mono text-sm"
             />
             <Button
               onClick={() => {
-                if (mapToken) {
-                  setIsTokenSet(true);
-                  toast.success("Map token set successfully!");
+                if (apiKey) {
+                  setIsKeySet(true);
+                  toast.success("Google Maps API key set successfully!");
                 } else {
-                  toast.error("Please enter a valid token");
+                  toast.error("Please enter a valid API key");
                 }
               }}
               className="w-full"
@@ -168,13 +251,93 @@ export const MapWidget = ({ buses = [], userLocation, onLocationAdd }: MapWidget
     );
   }
 
+  if (!isLoaded) {
+    return (
+      <div className="h-full flex items-center justify-center bg-card rounded-xl border border-border">
+        <div className="text-center space-y-2">
+          <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full mx-auto" />
+          <p className="text-sm text-muted-foreground">Loading Google Maps...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="relative h-full rounded-xl overflow-hidden border border-border shadow-card">
-      <div ref={mapContainer} className="absolute inset-0" />
+      <GoogleMap
+        mapContainerStyle={containerStyle}
+        center={defaultCenter}
+        zoom={12}
+        onLoad={onLoad}
+        onUnmount={onUnmount}
+        onClick={handleMapClick}
+        options={mapOptions}
+      >
+        {/* Bus Markers */}
+        {buses.map((bus) => (
+          <Marker
+            key={bus.id}
+            position={{ lat: bus.lat, lng: bus.lng }}
+            title={bus.name}
+            icon={{
+              path: google.maps.SymbolPath.CIRCLE,
+              scale: 12,
+              fillColor: "#3b9bde",
+              fillOpacity: 1,
+              strokeColor: "#ffffff",
+              strokeWeight: 2,
+            }}
+            label={{
+              text: "🚌",
+              fontSize: "20px",
+            }}
+          />
+        ))}
+
+        {/* User Location Marker */}
+        {userLocation && (
+          <Marker
+            position={{ lat: userLocation.lat, lng: userLocation.lng }}
+            title="Your Location"
+            icon={{
+              path: google.maps.SymbolPath.CIRCLE,
+              scale: 10,
+              fillColor: "#10b981",
+              fillOpacity: 1,
+              strokeColor: "#ffffff",
+              strokeWeight: 2,
+            }}
+            label={{
+              text: "📍",
+              fontSize: "18px",
+            }}
+          />
+        )}
+
+        {/* Route Polylines */}
+        {routes.map((route, index) => (
+          <Polyline
+            key={`route-${route.busId}-${index}`}
+            path={route.path}
+            options={{
+              strokeColor: "#3b9bde",
+              strokeOpacity: 0.8,
+              strokeWeight: 4,
+              geodesic: true,
+            }}
+          />
+        ))}
+      </GoogleMap>
+
       <div className="absolute top-4 left-4 bg-card/90 backdrop-blur-sm rounded-lg px-4 py-2 border border-border shadow-card">
         <p className="text-sm text-muted-foreground">
-          {onLocationAdd ? "Click on map to add your location" : "Real-time bus tracking"}
+          {onLocationAdd ? "Click on map to add your location" : "Real-time bus tracking with routes"}
         </p>
+        {routes.length > 0 && (
+          <p className="text-xs text-accent mt-1">
+            Showing {routes.length} route{routes.length !== 1 ? "s" : ""} to your location
+          </p>
+        )}
       </div>
     </div>
   );
