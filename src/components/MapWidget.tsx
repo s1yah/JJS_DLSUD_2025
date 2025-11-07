@@ -346,28 +346,39 @@ const MapComponent = ({
   );
 };
 
+// Wrapper component that handles Google Maps loading
+const MapWithLoader = ({ apiKey, buses, userLocation, onLocationAdd }: MapWidgetProps & { apiKey: string }) => {
+  const { isLoaded } = useJsApiLoader({
+    id: "google-map-script",
+    googleMapsApiKey: apiKey,
+    preventGoogleFontsLoading: true,
+  });
+
+  return (
+    <MapComponent
+      apiKey={apiKey}
+      buses={buses}
+      userLocation={userLocation}
+      onLocationAdd={onLocationAdd}
+      isLoaded={isLoaded}
+    />
+  );
+};
+
 // Main MapWidget Component
 export const MapWidget = ({ buses = [], userLocation, onLocationAdd }: MapWidgetProps) => {
   const [confirmedApiKey, setConfirmedApiKey] = useState<string | null>(null);
-
-  // Only load Google Maps API once we have the key
-  const { isLoaded } = useJsApiLoader({
-    id: "google-map-script",
-    googleMapsApiKey: confirmedApiKey || "",
-    preventGoogleFontsLoading: true,
-  });
 
   if (!confirmedApiKey) {
     return <ApiKeyInput onSubmit={setConfirmedApiKey} />;
   }
 
   return (
-    <MapComponent
+    <MapWithLoader
       apiKey={confirmedApiKey}
       buses={buses}
       userLocation={userLocation}
       onLocationAdd={onLocationAdd}
-      isLoaded={isLoaded}
     />
   );
 };
