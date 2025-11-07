@@ -124,15 +124,11 @@ const MapComponent = ({
   apiKey, 
   buses, 
   userLocation, 
-  onLocationAdd 
-}: MapWidgetProps & { apiKey: string }) => {
+  onLocationAdd,
+  isLoaded
+}: MapWidgetProps & { apiKey: string; isLoaded: boolean }) => {
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [routes, setRoutes] = useState<Array<{ path: google.maps.LatLngLiteral[]; busId: string }>>([]);
-
-  const { isLoaded } = useJsApiLoader({
-    id: "google-map-script",
-    googleMapsApiKey: apiKey,
-  });
 
   const onLoad = useCallback((map: google.maps.Map) => {
     setMap(map);
@@ -354,6 +350,13 @@ const MapComponent = ({
 export const MapWidget = ({ buses = [], userLocation, onLocationAdd }: MapWidgetProps) => {
   const [confirmedApiKey, setConfirmedApiKey] = useState<string | null>(null);
 
+  // Only load Google Maps API once we have the key
+  const { isLoaded } = useJsApiLoader({
+    id: "google-map-script",
+    googleMapsApiKey: confirmedApiKey || "",
+    preventGoogleFontsLoading: true,
+  });
+
   if (!confirmedApiKey) {
     return <ApiKeyInput onSubmit={setConfirmedApiKey} />;
   }
@@ -364,6 +367,7 @@ export const MapWidget = ({ buses = [], userLocation, onLocationAdd }: MapWidget
       buses={buses}
       userLocation={userLocation}
       onLocationAdd={onLocationAdd}
+      isLoaded={isLoaded}
     />
   );
 };
