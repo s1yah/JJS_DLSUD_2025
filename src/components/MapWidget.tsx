@@ -67,9 +67,65 @@ const mapOptions = {
   fullscreenControl: true,
 };
 
-export const MapWidget = ({ buses = [], userLocation, onLocationAdd }: MapWidgetProps) => {
+// API Key Input Component
+const ApiKeyInput = ({ onSubmit }: { onSubmit: (key: string) => void }) => {
   const [apiKey, setApiKey] = useState("");
-  const [isKeySet, setIsKeySet] = useState(false);
+
+  return (
+    <div className="h-full flex items-center justify-center bg-card rounded-xl border border-border p-8">
+      <div className="max-w-md w-full space-y-4">
+        <div className="text-center space-y-2">
+          <MapPin className="h-12 w-12 text-primary mx-auto" />
+          <h3 className="text-xl font-bold text-foreground">Map Setup Required</h3>
+          <p className="text-sm text-muted-foreground">
+            Enter your Google Maps API key to enable the map widget. Get your key at{" "}
+            <a
+              href="https://console.cloud.google.com/google/maps-apis"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary hover:underline"
+            >
+              Google Cloud Console
+            </a>
+          </p>
+          <p className="text-xs text-muted-foreground mt-2">
+            Make sure to enable Maps JavaScript API and Routes API in your Google Cloud project.
+          </p>
+        </div>
+        <div className="space-y-2">
+          <Input
+            type="text"
+            placeholder="AIzaSy..."
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            className="font-mono text-sm"
+          />
+          <Button
+            onClick={() => {
+              if (apiKey.trim()) {
+                onSubmit(apiKey.trim());
+                toast.success("Google Maps API key set successfully!");
+              } else {
+                toast.error("Please enter a valid API key");
+              }
+            }}
+            className="w-full"
+          >
+            Initialize Map
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Map Component - Only rendered when API key is set
+const MapComponent = ({ 
+  apiKey, 
+  buses, 
+  userLocation, 
+  onLocationAdd 
+}: MapWidgetProps & { apiKey: string }) => {
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [routes, setRoutes] = useState<Array<{ path: google.maps.LatLngLiteral[]; busId: string }>>([]);
 
@@ -98,9 +154,48 @@ export const MapWidget = ({ buses = [], userLocation, onLocationAdd }: MapWidget
     [onLocationAdd]
   );
 
+  // Decode Google's encoded polyline format
+  const decodePolyline = (encoded: string): google.maps.LatLngLiteral[] => {
+    const poly: google.maps.LatLngLiteral[] = [];
+    let index = 0;
+    let lat = 0;
+    let lng = 0;
+
+    while (index < encoded.length) {
+      let b;
+      let shift = 0;
+      let result = 0;
+
+      do {
+        b = encoded.charCodeAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+
+      const dlat = result & 1 ? ~(result >> 1) : result >> 1;
+      lat += dlat;
+
+      shift = 0;
+      result = 0;
+
+      do {
+        b = encoded.charCodeAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+
+      const dlng = result & 1 ? ~(result >> 1) : result >> 1;
+      lng += dlng;
+
+      poly.push({ lat: lat / 1e5, lng: lng / 1e5 });
+    }
+
+    return poly;
+  };
+
   // Calculate routes using Google Routes API
   const calculateRoutes = useCallback(async () => {
-    if (!isKeySet || !userLocation || buses.length === 0) return;
+    if (!userLocation || !buses || buses.length === 0) return;
 
     const newRoutes: Array<{ path: google.maps.LatLngLiteral[]; busId: string }> = [];
 
@@ -155,101 +250,13 @@ export const MapWidget = ({ buses = [], userLocation, onLocationAdd }: MapWidget
     }
 
     setRoutes(newRoutes);
-  }, [apiKey, buses, userLocation, isKeySet]);
+  }, [apiKey, buses, userLocation]);
 
   useEffect(() => {
-    if (userLocation && buses.length > 0 && isKeySet) {
+    if (userLocation && buses && buses.length > 0) {
       calculateRoutes();
     }
-  }, [userLocation, buses, calculateRoutes, isKeySet]);
-
-  // Decode Google's encoded polyline format
-  const decodePolyline = (encoded: string): google.maps.LatLngLiteral[] => {
-    const poly: google.maps.LatLngLiteral[] = [];
-    let index = 0;
-    let lat = 0;
-    let lng = 0;
-
-    while (index < encoded.length) {
-      let b;
-      let shift = 0;
-      let result = 0;
-
-      do {
-        b = encoded.charCodeAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
-
-      const dlat = result & 1 ? ~(result >> 1) : result >> 1;
-      lat += dlat;
-
-      shift = 0;
-      result = 0;
-
-      do {
-        b = encoded.charCodeAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
-
-      const dlng = result & 1 ? ~(result >> 1) : result >> 1;
-      lng += dlng;
-
-      poly.push({ lat: lat / 1e5, lng: lng / 1e5 });
-    }
-
-    return poly;
-  };
-
-  if (!isKeySet) {
-    return (
-      <div className="h-full flex items-center justify-center bg-card rounded-xl border border-border p-8">
-        <div className="max-w-md w-full space-y-4">
-          <div className="text-center space-y-2">
-            <MapPin className="h-12 w-12 text-primary mx-auto" />
-            <h3 className="text-xl font-bold text-foreground">Map Setup Required</h3>
-            <p className="text-sm text-muted-foreground">
-              Enter your Google Maps API key to enable the map widget. Get your key at{" "}
-              <a
-                href="https://console.cloud.google.com/google/maps-apis"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary hover:underline"
-              >
-                Google Cloud Console
-              </a>
-            </p>
-            <p className="text-xs text-muted-foreground mt-2">
-              Make sure to enable Maps JavaScript API and Routes API in your Google Cloud project.
-            </p>
-          </div>
-          <div className="space-y-2">
-            <Input
-              type="text"
-              placeholder="AIzaSy..."
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              className="font-mono text-sm"
-            />
-            <Button
-              onClick={() => {
-                if (apiKey) {
-                  setIsKeySet(true);
-                  toast.success("Google Maps API key set successfully!");
-                } else {
-                  toast.error("Please enter a valid API key");
-                }
-              }}
-              className="w-full"
-            >
-              Initialize Map
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  }, [userLocation, buses, calculateRoutes]);
 
   if (!isLoaded) {
     return (
@@ -274,7 +281,7 @@ export const MapWidget = ({ buses = [], userLocation, onLocationAdd }: MapWidget
         options={mapOptions}
       >
         {/* Bus Markers */}
-        {buses.map((bus) => (
+        {buses && buses.map((bus) => (
           <Marker
             key={bus.id}
             position={{ lat: bus.lat, lng: bus.lng }}
@@ -340,5 +347,23 @@ export const MapWidget = ({ buses = [], userLocation, onLocationAdd }: MapWidget
         )}
       </div>
     </div>
+  );
+};
+
+// Main MapWidget Component
+export const MapWidget = ({ buses = [], userLocation, onLocationAdd }: MapWidgetProps) => {
+  const [confirmedApiKey, setConfirmedApiKey] = useState<string | null>(null);
+
+  if (!confirmedApiKey) {
+    return <ApiKeyInput onSubmit={setConfirmedApiKey} />;
+  }
+
+  return (
+    <MapComponent
+      apiKey={confirmedApiKey}
+      buses={buses}
+      userLocation={userLocation}
+      onLocationAdd={onLocationAdd}
+    />
   );
 };
