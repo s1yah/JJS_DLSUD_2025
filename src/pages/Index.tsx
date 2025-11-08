@@ -27,12 +27,11 @@ const Index = () => {
   useEffect(() => {
     const fetchBusData = async () => {
       try {
-        const credentials = btoa('apiuser@gmail.com:getData');
         const response = await fetch(
           "https://demo.thingsboard.io/api/plugins/telemetry/DEVICE/458fd2c0-889a-11f0-8c95-7536037a85df/values/timeseries?keys=latitude%2Clongitude%2CpeopleCount&useStrictDataTypes=false",
           {
             headers: {
-              'Authorization': `Basic ${credentials}`
+              'Authorization': 'Bearer eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhcGl1c2VyQGdtYWlsLmNvbSIsInVzZXJJZCI6IjBhZjcwOWQwLWJjNmItMTFmMC05ZGFjLWYxNGFhN2Y3NTU5ZiIsInNjb3BlcyI6WyJDVVNUT01FUl9VU0VSIl0sInNlc3Npb25JZCI6IjFjNzIwZmFmLTQ3Y2QtNGQxNS04MmJjLWY2ODkzNDQzY2Q0MyIsImV4cCI6MTc2NDQwNDk1NCwiaXNzIjoidGhpbmdzYm9hcmQuaW8iLCJpYXQiOjE3NjI2MDQ5NTQsImZpcnN0TmFtZSI6IkFQSSIsImxhc3ROYW1lIjoiVXNlciIsImVuYWJsZWQiOnRydWUsInByaXZhY3lQb2xpY3lBY2NlcHRlZCI6ZmFsc2UsImlzUHVibGljIjpmYWxzZSwidGVuYW50SWQiOiIwMjcxOGQxMC04MGZlLTExZjAtYTliNS03OTJlMjE5NGE1ZDQiLCJjdXN0b21lcklkIjoiMDQ5YTg3OTAtODBmZS0xMWYwLWE5YjUtNzkyZTIxOTRhNWQ0In0.OCGyYppcDJhm1pmmyJNz6Ma0iZymLVAGs74MxbxbdO4u_tdvlzvcf6IQvjEtrEONKDMBiEe2T3QW3-Vxf0riJQ'
             }
           }
         );
