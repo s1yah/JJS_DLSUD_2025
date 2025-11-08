@@ -27,8 +27,14 @@ const Index = () => {
   useEffect(() => {
     const fetchBusData = async () => {
       try {
+        const credentials = btoa('apiuser@gmail.com:getData');
         const response = await fetch(
-          "https://demo.thingsboard.io/api/plugins/telemetry/DEVICE/458fd2c0-889a-11f0-8c95-7536037a85df/values/timeseries?keys=latitude%2Clongitude%2CpeopleCount&useStrictDataTypes=false"
+          "https://demo.thingsboard.io/api/plugins/telemetry/DEVICE/458fd2c0-889a-11f0-8c95-7536037a85df/values/timeseries?keys=latitude%2Clongitude%2CpeopleCount&useStrictDataTypes=false",
+          {
+            headers: {
+              'Authorization': `Basic ${credentials}`
+            }
+          }
         );
         
         if (!response.ok) {
