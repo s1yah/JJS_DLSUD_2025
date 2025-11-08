@@ -1,54 +1,78 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { MapWidget } from "@/components/MapWidget";
 import { BusCard } from "@/components/BusCard";
 import { StatsCard } from "@/components/StatsCard";
 import { Bus, Users, Clock, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
-
-// Mock data - in production, this would come from your backend
-const mockBuses = [
-  {
-    id: "bus-1",
-    name: "Bus 101",
-    route: "Downtown - Airport",
-    lat: 40.7128,
-    lng: -74.006,
-    passengers: 32,
-    capacity: 40,
-    eta: "12 min",
-    status: "active" as const,
-    location: "5th Avenue, Manhattan",
-  },
-  {
-    id: "bus-2",
-    name: "Bus 205",
-    route: "Central - West End",
-    lat: 40.7589,
-    lng: -73.9851,
-    passengers: 28,
-    capacity: 40,
-    eta: "8 min",
-    status: "active" as const,
-    location: "Times Square",
-  },
-  {
-    id: "bus-3",
-    name: "Bus 340",
-    route: "North Loop Express",
-    lat: 40.7489,
-    lng: -73.9680,
-    passengers: 38,
-    capacity: 40,
-    eta: "15 min",
-    status: "delayed" as const,
-    location: "Lexington Ave",
-  },
-];
+import { toast } from "sonner";
 
 const Index = () => {
   const [userRole, setUserRole] = useState<"admin" | "user">("admin");
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [buses, setBuses] = useState<Array<{
+    id: string;
+    name: string;
+    route: string;
+    lat: number;
+    lng: number;
+    passengers: number;
+    capacity: number;
+    eta: string;
+    status: "active" | "delayed";
+    location: string;
+  }>>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchBusData = async () => {
+      try {
+        const response = await fetch(
+          "https://demo.thingsboard.io/api/plugins/telemetry/DEVICE/458fd2c0-889a-11f0-8c95-7536037a85df/values/timeseries?keys=latitude%2Clongitude%2CpeopleCount&useStrictDataTypes=false"
+        );
+        
+        if (!response.ok) {
+          throw new Error("Failed to fetch bus data");
+        }
+
+        const data = await response.json();
+        
+        // Transform API data to bus format
+        const latitude = data.latitude?.[0]?.value ? parseFloat(data.latitude[0].value) : 40.7128;
+        const longitude = data.longitude?.[0]?.value ? parseFloat(data.longitude[0].value) : -74.006;
+        const peopleCount = data.peopleCount?.[0]?.value ? parseInt(data.peopleCount[0].value) : 0;
+
+        const transformedBuses = [
+          {
+            id: "bus-1",
+            name: "Bus 101",
+            route: "Live Route",
+            lat: latitude,
+            lng: longitude,
+            passengers: peopleCount,
+            capacity: 40,
+            eta: "Live",
+            status: "active" as const,
+            location: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`,
+          },
+        ];
+
+        setBuses(transformedBuses);
+        setIsLoading(false);
+      } catch (error) {
+        console.error("Error fetching bus data:", error);
+        toast.error("Failed to load bus data");
+        setIsLoading(false);
+      }
+    };
+
+    fetchBusData();
+    
+    // Refresh data every 30 seconds
+    const interval = setInterval(fetchBusData, 30000);
+    
+    return () => clearInterval(interval);
+  }, []);
 
   const handleLocationAdd = (lat: number, lng: number) => {
     setUserLocation({ lat, lng });
@@ -73,23 +97,23 @@ const Index = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <StatsCard
               title="Active Buses"
-              value={mockBuses.filter((b) => b.status === "active").length}
+              value={buses.filter((b) => b.status === "active").length}
               icon={<Bus className="h-6 w-6" />}
               trend={{ value: 12, positive: true }}
               subtitle="Currently operational"
             />
             <StatsCard
               title="Total Passengers"
-              value={mockBuses.reduce((sum, bus) => sum + bus.passengers, 0)}
+              value={buses.reduce((sum, bus) => sum + bus.passengers, 0)}
               icon={<Users className="h-6 w-6" />}
               trend={{ value: 8, positive: true }}
               subtitle="Across all buses"
             />
             <StatsCard
               title="Avg ETA"
-              value="11 min"
+              value="Live"
               icon={<Clock className="h-6 w-6" />}
-              subtitle="System-wide average"
+              subtitle="Real-time tracking"
             />
             <StatsCard
               title="Efficiency"
@@ -105,11 +129,20 @@ const Index = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Map Widget */}
           <div className="lg:col-span-2 h-[600px]">
-            <MapWidget
-              buses={mockBuses}
-              userLocation={userLocation}
-              onLocationAdd={userRole === "user" ? handleLocationAdd : undefined}
-            />
+            {isLoading ? (
+              <div className="h-full flex items-center justify-center bg-card rounded-xl border border-border">
+                <div className="text-center space-y-2">
+                  <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full mx-auto" />
+                  <p className="text-sm text-muted-foreground">Loading bus data...</p>
+                </div>
+              </div>
+            ) : (
+              <MapWidget
+                buses={buses}
+                userLocation={userLocation}
+                onLocationAdd={userRole === "user" ? handleLocationAdd : undefined}
+              />
+            )}
           </div>
 
           {/* Bus List */}
@@ -117,9 +150,19 @@ const Index = () => {
             <h2 className="text-xl font-bold text-foreground mb-4">
               {userRole === "admin" ? "Fleet Overview" : "Nearby Buses"}
             </h2>
-            {mockBuses.map((bus) => (
-              <BusCard key={bus.id} {...bus} />
-            ))}
+            {isLoading ? (
+              <div className="text-center py-8">
+                <p className="text-sm text-muted-foreground">Loading buses...</p>
+              </div>
+            ) : buses.length > 0 ? (
+              buses.map((bus) => (
+                <BusCard key={bus.id} {...bus} />
+              ))
+            ) : (
+              <div className="text-center py-8">
+                <p className="text-sm text-muted-foreground">No buses available</p>
+              </div>
+            )}
           </div>
         </div>
 
