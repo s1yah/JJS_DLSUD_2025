@@ -1,0 +1,4 @@
+project_id = "hdfytolttfwuafujbwit"
+
+[functions.thingsboard-proxy]
+verify_jwt = false
