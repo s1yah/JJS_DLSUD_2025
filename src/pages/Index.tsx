@@ -3,13 +3,24 @@ import { DashboardLayout } from "@/components/DashboardLayout";
 import { MapWidget } from "@/components/MapWidget";
 import { BusCard } from "@/components/BusCard";
 import { StatsCard } from "@/components/StatsCard";
-import { Bus, Users, Clock, TrendingUp } from "lucide-react";
+import { Bus, Users, Clock, TrendingUp, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+
+// Destination coordinates
+const DESTINATIONS = {
+  PITX: { lat: 14.4515, lng: 120.9894, name: "PITX" },
+  SM_DASMARINAS: { lat: 14.3294, lng: 120.9367, name: "SM Dasmariñas" },
+} as const;
+
+type DestinationKey = keyof typeof DESTINATIONS;
 
 const Index = () => {
   const [userRole, setUserRole] = useState<"admin" | "user">("admin");
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [selectedDestination, setSelectedDestination] = useState<DestinationKey>("PITX");
+  const [googleMapsApiKey, setGoogleMapsApiKey] = useState<string | null>(null);
   const [buses, setBuses] = useState<Array<{
     id: string;
     name: string;
@@ -47,6 +58,13 @@ const Index = () => {
         const longitude = data.longitude?.[0]?.value ? parseFloat(data.longitude[0].value) : -74.006;
         const peopleCount = data.peopleCount?.[0]?.value ? parseInt(data.peopleCount[0].value) : 0;
 
+        // Calculate ETA if Google Maps API key is available
+        let eta = "Calculating...";
+        if (googleMapsApiKey && userRole === "admin") {
+          const destination = DESTINATIONS[selectedDestination];
+          eta = await calculateETA(latitude, longitude, destination.lat, destination.lng, googleMapsApiKey);
+        }
+
         const transformedBuses = [
           {
             id: "bus-1",
@@ -56,7 +74,7 @@ const Index = () => {
             lng: longitude,
             passengers: peopleCount,
             capacity: 40,
-            eta: "Live",
+            eta,
             status: "active" as const,
             location: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`,
           },
@@ -77,7 +95,57 @@ const Index = () => {
     const interval = setInterval(fetchBusData, 30000);
     
     return () => clearInterval(interval);
-  }, []);
+  }, [googleMapsApiKey, selectedDestination, userRole]);
+
+  // Calculate ETA using Google Routes API
+  const calculateETA = async (busLat: number, busLng: number, destLat: number, destLng: number, apiKey: string) => {
+    try {
+      const response = await fetch(
+        "https://routes.googleapis.com/directions/v2:computeRoutes",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": apiKey,
+            "X-Goog-FieldMask": "routes.duration,routes.distanceMeters",
+          },
+          body: JSON.stringify({
+            origin: {
+              location: {
+                latLng: {
+                  latitude: busLat,
+                  longitude: busLng,
+                },
+              },
+            },
+            destination: {
+              location: {
+                latLng: {
+                  latitude: destLat,
+                  longitude: destLng,
+                },
+              },
+            },
+            travelMode: "DRIVE",
+            routingPreference: "TRAFFIC_AWARE",
+          }),
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.routes && data.routes[0]) {
+          const durationSeconds = parseInt(data.routes[0].duration.replace('s', ''));
+          const minutes = Math.round(durationSeconds / 60);
+          return `${minutes} min`;
+        }
+      }
+      return "N/A";
+    } catch (error) {
+      console.error("Error calculating ETA:", error);
+      return "N/A";
+    }
+  };
 
   const handleLocationAdd = (lat: number, lng: number) => {
     setUserLocation({ lat, lng });
@@ -96,6 +164,33 @@ const Index = () => {
             Switch to {userRole === "admin" ? "User" : "Admin"} View
           </Button>
         </div>
+
+        {/* Destination Selector - Admin Only */}
+        {userRole === "admin" && (
+          <div className="bg-card border border-border rounded-lg p-4 flex items-center gap-4">
+            <MapPin className="h-5 w-5 text-primary" />
+            <div className="flex-1">
+              <label className="text-sm font-medium text-foreground mb-1 block">
+                Select Destination
+              </label>
+              <Select
+                value={selectedDestination}
+                onValueChange={(value: DestinationKey) => setSelectedDestination(value)}
+              >
+                <SelectTrigger className="w-full max-w-xs">
+                  <SelectValue placeholder="Select destination" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="PITX">PITX</SelectItem>
+                  <SelectItem value="SM_DASMARINAS">SM Dasmariñas</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="text-sm text-muted-foreground">
+              ETAs calculated to: <span className="font-semibold text-foreground">{DESTINATIONS[selectedDestination].name}</span>
+            </div>
+          </div>
+        )}
 
         {/* Stats Cards - Admin Only */}
         {userRole === "admin" && (
@@ -146,6 +241,7 @@ const Index = () => {
                 buses={buses}
                 userLocation={userLocation}
                 onLocationAdd={userRole === "user" ? handleLocationAdd : undefined}
+                onApiKeySet={setGoogleMapsApiKey}
               />
             )}
           </div>

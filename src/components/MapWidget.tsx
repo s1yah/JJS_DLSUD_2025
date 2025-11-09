@@ -15,6 +15,7 @@ interface MapWidgetProps {
   }>;
   userLocation?: { lat: number; lng: number } | null;
   onLocationAdd?: (lat: number, lng: number) => void;
+  onApiKeySet?: (key: string) => void;
 }
 
 const containerStyle = {
@@ -374,11 +375,16 @@ const MapWithLoader = ({ apiKey, buses, userLocation, onLocationAdd }: MapWidget
 };
 
 // Main MapWidget Component
-export const MapWidget = ({ buses = [], userLocation, onLocationAdd }: MapWidgetProps) => {
+export const MapWidget = ({ buses = [], userLocation, onLocationAdd, onApiKeySet }: MapWidgetProps) => {
   const [confirmedApiKey, setConfirmedApiKey] = useState<string | null>(null);
 
+  const handleApiKeySubmit = (key: string) => {
+    setConfirmedApiKey(key);
+    onApiKeySet?.(key);
+  };
+
   if (!confirmedApiKey) {
-    return <ApiKeyInput onSubmit={setConfirmedApiKey} />;
+    return <ApiKeyInput onSubmit={handleApiKeySubmit} />;
   }
 
   return (
