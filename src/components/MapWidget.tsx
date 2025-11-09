@@ -281,18 +281,26 @@ const MapComponent = ({
           <Marker
             key={bus.id}
             position={{ lat: bus.lat, lng: bus.lng }}
-            title={bus.name}
+            title={`${bus.name} - ${bus.passengers} passengers`}
             icon={{
-              path: google.maps.SymbolPath.CIRCLE,
-              scale: 12,
-              fillColor: "#3b9bde",
-              fillOpacity: 1,
-              strokeColor: "#ffffff",
-              strokeWeight: 2,
-            }}
-            label={{
-              text: "🚌",
-              fontSize: "20px",
+              url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
+                <svg xmlns="http://www.w3.org/2000/svg" width="60" height="80" viewBox="0 0 60 80">
+                  <defs>
+                    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+                      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.3"/>
+                    </filter>
+                  </defs>
+                  <!-- Bus Icon Circle -->
+                  <circle cx="30" cy="45" r="18" fill="#3b9bde" stroke="white" stroke-width="2" filter="url(#shadow)"/>
+                  <!-- Bus Emoji -->
+                  <text x="30" y="55" font-size="22" text-anchor="middle" fill="white">🚌</text>
+                  <!-- Passenger Count Badge -->
+                  <rect x="15" y="15" width="30" height="20" rx="10" fill="#10b981" stroke="white" stroke-width="2" filter="url(#shadow)"/>
+                  <text x="30" y="29" font-size="12" font-weight="bold" text-anchor="middle" fill="white">${bus.passengers}</text>
+                </svg>
+              `)}`,
+              scaledSize: new google.maps.Size(60, 80),
+              anchor: new google.maps.Point(30, 70),
             }}
           />
         ))}
