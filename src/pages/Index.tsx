@@ -213,6 +213,28 @@ const Index = () => {
     }
   };
 
+  const handleLocationRemove = async () => {
+    const userId = localStorage.getItem('bustrack_user_id');
+    
+    if (!userId) {
+      toast.error("No location to remove");
+      return;
+    }
+
+    const { error } = await supabase
+      .from('user_locations')
+      .delete()
+      .eq('user_id', userId);
+
+    if (error) {
+      console.error("Error removing location:", error);
+      toast.error("Failed to remove location");
+    } else {
+      setUserLocation(null);
+      toast.success("Location removed successfully");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -335,13 +357,24 @@ const Index = () => {
         {/* User Location Info */}
         {userRole === "user" && userLocation && (
           <div className="bg-accent/10 border border-accent rounded-lg p-4">
-            <p className="text-sm text-foreground">
-              <strong>Your location set:</strong> {userLocation.lat.toFixed(4)},{" "}
-              {userLocation.lng.toFixed(4)}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Drivers can now see your location on the map
-            </p>
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1">
+                <p className="text-sm text-foreground">
+                  <strong>Your location set:</strong> {userLocation.lat.toFixed(4)},{" "}
+                  {userLocation.lng.toFixed(4)}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Drivers can now see your location on the map
+                </p>
+              </div>
+              <Button
+                onClick={handleLocationRemove}
+                variant="destructive"
+                size="sm"
+              >
+                Remove Location
+              </Button>
+            </div>
           </div>
         )}
 
