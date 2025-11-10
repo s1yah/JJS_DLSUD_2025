@@ -14,6 +14,7 @@ interface MapWidgetProps {
     passengers: number;
   }>;
   userLocation?: { lat: number; lng: number } | null;
+  userLocations?: Array<{ id: string; lat: number; lng: number; user_id: string }>;
   onLocationAdd?: (lat: number, lng: number) => void;
   onApiKeySet?: (key: string) => void;
 }
@@ -124,7 +125,8 @@ const ApiKeyInput = ({ onSubmit }: { onSubmit: (key: string) => void }) => {
 const MapComponent = ({ 
   apiKey, 
   buses, 
-  userLocation, 
+  userLocation,
+  userLocations = [],
   onLocationAdd,
   isLoaded
 }: MapWidgetProps & { apiKey: string; isLoaded: boolean }) => {
@@ -306,7 +308,7 @@ const MapComponent = ({
           />
         ))}
 
-        {/* User Location Marker */}
+        {/* User Location Marker (current user) */}
         {userLocation && (
           <Marker
             position={{ lat: userLocation.lat, lng: userLocation.lng }}
@@ -325,6 +327,32 @@ const MapComponent = ({
             }}
           />
         )}
+
+        {/* All User Location Markers (from database) */}
+        {userLocations.map((loc) => (
+          <Marker
+            key={loc.id}
+            position={{ lat: loc.lat, lng: loc.lng }}
+            title={`Passenger: ${loc.user_id.substring(0, 8)}`}
+            icon={{
+              url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
+                <svg xmlns="http://www.w3.org/2000/svg" width="40" height="50" viewBox="0 0 40 50">
+                  <defs>
+                    <filter id="shadow-user" x="-50%" y="-50%" width="200%" height="200%">
+                      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity="0.3"/>
+                    </filter>
+                  </defs>
+                  <!-- User Location Circle -->
+                  <circle cx="20" cy="25" r="14" fill="#10b981" stroke="white" stroke-width="2" filter="url(#shadow-user)"/>
+                  <!-- Person Icon -->
+                  <text x="20" y="32" font-size="18" text-anchor="middle" fill="white">👤</text>
+                </svg>
+              `)}`,
+              scaledSize: new google.maps.Size(40, 50),
+              anchor: new google.maps.Point(20, 45),
+            }}
+          />
+        ))}
 
         {/* Route Polylines */}
         {routes.map((route, index) => (
@@ -356,7 +384,7 @@ const MapComponent = ({
 };
 
 // Wrapper component that handles Google Maps loading
-const MapWithLoader = ({ apiKey, buses, userLocation, onLocationAdd }: MapWidgetProps & { apiKey: string }) => {
+const MapWithLoader = ({ apiKey, buses, userLocation, userLocations, onLocationAdd }: MapWidgetProps & { apiKey: string }) => {
   const { isLoaded } = useJsApiLoader({
     id: "google-map-script",
     googleMapsApiKey: apiKey,
@@ -368,6 +396,7 @@ const MapWithLoader = ({ apiKey, buses, userLocation, onLocationAdd }: MapWidget
       apiKey={apiKey}
       buses={buses}
       userLocation={userLocation}
+      userLocations={userLocations}
       onLocationAdd={onLocationAdd}
       isLoaded={isLoaded}
     />
@@ -375,7 +404,7 @@ const MapWithLoader = ({ apiKey, buses, userLocation, onLocationAdd }: MapWidget
 };
 
 // Main MapWidget Component
-export const MapWidget = ({ buses = [], userLocation, onLocationAdd, onApiKeySet }: MapWidgetProps) => {
+export const MapWidget = ({ buses = [], userLocation, userLocations = [], onLocationAdd, onApiKeySet }: MapWidgetProps) => {
   const [confirmedApiKey, setConfirmedApiKey] = useState<string | null>(null);
 
   const handleApiKeySubmit = (key: string) => {
@@ -392,6 +421,7 @@ export const MapWidget = ({ buses = [], userLocation, onLocationAdd, onApiKeySet
       apiKey={confirmedApiKey}
       buses={buses}
       userLocation={userLocation}
+      userLocations={userLocations}
       onLocationAdd={onLocationAdd}
     />
   );

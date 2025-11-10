@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
-import { DashboardLayout } from "@/components/DashboardLayout";
 import { MapWidget } from "@/components/MapWidget";
 import { BusCard } from "@/components/BusCard";
 import { StatsCard } from "@/components/StatsCard";
-import { Bus, Users, Clock, TrendingUp, MapPin } from "lucide-react";
+import { Bus, Users, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 // Destination coordinates
 const DESTINATIONS = {
@@ -21,6 +21,7 @@ const Index = () => {
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [selectedDestination, setSelectedDestination] = useState<DestinationKey>("PITX");
   const [googleMapsApiKey, setGoogleMapsApiKey] = useState<string | null>(null);
+  const [userLocations, setUserLocations] = useState<Array<{ id: string; lat: number; lng: number; user_id: string }>>([]);
   const [buses, setBuses] = useState<Array<{
     id: string;
     name: string;
@@ -147,12 +148,88 @@ const Index = () => {
     }
   };
 
-  const handleLocationAdd = (lat: number, lng: number) => {
+  // Fetch user locations from database
+  useEffect(() => {
+    const fetchUserLocations = async () => {
+      const { data, error } = await supabase
+        .from('user_locations')
+        .select('*')
+        .order('updated_at', { ascending: false });
+      
+      if (error) {
+        console.error("Error fetching user locations:", error);
+      } else if (data) {
+        setUserLocations(data);
+      }
+    };
+
+    fetchUserLocations();
+
+    // Subscribe to real-time updates
+    const channel = supabase
+      .channel('user_locations_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'user_locations'
+        },
+        (payload) => {
+          console.log('User location changed:', payload);
+          fetchUserLocations();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const handleLocationAdd = async (lat: number, lng: number) => {
     setUserLocation({ lat, lng });
+    
+    // Generate a simple user ID (in production, use proper auth)
+    const userId = localStorage.getItem('bustrack_user_id') || `user_${Date.now()}`;
+    localStorage.setItem('bustrack_user_id', userId);
+
+    // Save to database
+    const { error } = await supabase
+      .from('user_locations')
+      .upsert({
+        user_id: userId,
+        lat,
+        lng,
+      }, {
+        onConflict: 'user_id'
+      });
+
+    if (error) {
+      console.error("Error saving location:", error);
+      toast.error("Failed to save location");
+    } else {
+      toast.success("Location saved and visible to drivers!");
+    }
   };
 
   return (
-    <DashboardLayout role={userRole}>
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <header className="h-16 bg-card border-b border-border flex items-center px-6">
+        <div className="flex items-center gap-3">
+          <div className="h-8 w-8 rounded-lg bg-gradient-primary flex items-center justify-center shadow-glow">
+            <Bus className="h-5 w-5 text-primary-foreground" />
+          </div>
+          <div>
+            <h1 className="text-lg font-bold text-foreground">BusTrack IoT</h1>
+            <p className="text-xs text-muted-foreground">
+              {userRole === "admin" ? "Admin Dashboard" : "Live Tracking"}
+            </p>
+          </div>
+        </div>
+      </header>
+
       <div className="p-6 space-y-6">
         {/* Role Toggle */}
         <div className="flex justify-end">
@@ -194,7 +271,7 @@ const Index = () => {
 
         {/* Stats Cards - Admin Only */}
         {userRole === "admin" && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <StatsCard
               title="Active Buses"
               value={buses.filter((b) => b.status === "active").length}
@@ -208,19 +285,6 @@ const Index = () => {
               icon={<Users className="h-6 w-6" />}
               trend={{ value: 8, positive: true }}
               subtitle="Across all buses"
-            />
-            <StatsCard
-              title="Avg ETA"
-              value="Live"
-              icon={<Clock className="h-6 w-6" />}
-              subtitle="Real-time tracking"
-            />
-            <StatsCard
-              title="Efficiency"
-              value="94%"
-              icon={<TrendingUp className="h-6 w-6" />}
-              trend={{ value: 3, positive: true }}
-              subtitle="On-time performance"
             />
           </div>
         )}
@@ -240,6 +304,7 @@ const Index = () => {
               <MapWidget
                 buses={buses}
                 userLocation={userLocation}
+                userLocations={userLocations}
                 onLocationAdd={userRole === "user" ? handleLocationAdd : undefined}
                 onApiKeySet={setGoogleMapsApiKey}
               />
@@ -275,7 +340,19 @@ const Index = () => {
               {userLocation.lng.toFixed(4)}
             </p>
             <p className="text-xs text-muted-foreground mt-1">
-              Admins can now see your location on the map
+              Drivers can now see your location on the map
+            </p>
+          </div>
+        )}
+
+        {/* Admin view: Show number of passenger locations */}
+        {userRole === "admin" && userLocations.length > 0 && (
+          <div className="bg-primary/10 border border-primary rounded-lg p-4">
+            <p className="text-sm text-foreground">
+              <strong>Tracking {userLocations.length} passenger location{userLocations.length !== 1 ? 's' : ''}</strong>
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Passenger markers are visible on the map in real-time
             </p>
           </div>
         )}
@@ -297,7 +374,7 @@ const Index = () => {
           background: hsl(var(--primary-glow));
         }
       `}</style>
-    </DashboardLayout>
+    </div>
   );
 };
 
