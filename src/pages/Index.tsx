@@ -1,12 +1,14 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { MapWidget } from "@/components/MapWidget";
 import { BusCard } from "@/components/BusCard";
 import { StatsCard } from "@/components/StatsCard";
-import { Bus, Users, MapPin } from "lucide-react";
+import { Bus, Users, MapPin, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import type { User, Session } from "@supabase/supabase-js";
 
 // Destination coordinates
 const DESTINATIONS = {
@@ -17,7 +19,10 @@ const DESTINATIONS = {
 type DestinationKey = keyof typeof DESTINATIONS;
 
 const Index = () => {
-  const [userRole, setUserRole] = useState<"admin" | "user">("admin");
+  const navigate = useNavigate();
+  const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [selectedDestination, setSelectedDestination] = useState<DestinationKey>("PITX");
   const [googleMapsApiKey, setGoogleMapsApiKey] = useState<string | null>(null);
@@ -36,7 +41,52 @@ const Index = () => {
   }>>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Check authentication
   useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        
+        if (!session) {
+          navigate("/auth");
+        }
+      }
+    );
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      
+      if (!session) {
+        navigate("/auth");
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [navigate]);
+
+  // Check if user is admin
+  useEffect(() => {
+    if (!user) return;
+
+    const checkAdminRole = async () => {
+      const { data } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user.id)
+        .eq("role", "admin")
+        .maybeSingle();
+      
+      setIsAdmin(!!data);
+    };
+
+    checkAdminRole();
+  }, [user]);
+
+  useEffect(() => {
+    if (!session) return;
+
     const fetchBusData = async () => {
       try {
         const response = await fetch(
@@ -44,6 +94,7 @@ const Index = () => {
           {
             headers: {
               'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`,
             }
           }
         );
@@ -61,7 +112,7 @@ const Index = () => {
 
         // Calculate ETA if Google Maps API key is available
         let eta = "Calculating...";
-        if (googleMapsApiKey && userRole === "admin") {
+        if (googleMapsApiKey && isAdmin) {
           const destination = DESTINATIONS[selectedDestination];
           eta = await calculateETA(latitude, longitude, destination.lat, destination.lng, googleMapsApiKey);
         }
@@ -96,7 +147,7 @@ const Index = () => {
     const interval = setInterval(fetchBusData, 30000);
     
     return () => clearInterval(interval);
-  }, [googleMapsApiKey, selectedDestination, userRole]);
+  }, [session, googleMapsApiKey, selectedDestination, isAdmin]);
 
   // Calculate ETA using Google Routes API
   const calculateETA = async (busLat: number, busLng: number, destLat: number, destLng: number, apiKey: string) => {
@@ -150,6 +201,8 @@ const Index = () => {
 
   // Fetch user locations from database
   useEffect(() => {
+    if (!session) return;
+
     const fetchUserLocations = async () => {
       const { data, error } = await supabase
         .from('user_locations')
@@ -185,20 +238,17 @@ const Index = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [session]);
 
   const handleLocationAdd = async (lat: number, lng: number) => {
-    setUserLocation({ lat, lng });
+    if (!user) return;
     
-    // Generate a simple user ID (in production, use proper auth)
-    const userId = localStorage.getItem('bustrack_user_id') || `user_${Date.now()}`;
-    localStorage.setItem('bustrack_user_id', userId);
+    setUserLocation({ lat, lng });
 
-    // Save to database
     const { error } = await supabase
       .from('user_locations')
       .upsert({
-        user_id: userId,
+        user_id: user.id,
         lat,
         lng,
       }, {
@@ -214,17 +264,12 @@ const Index = () => {
   };
 
   const handleLocationRemove = async () => {
-    const userId = localStorage.getItem('bustrack_user_id');
-    
-    if (!userId) {
-      toast.error("No location to remove");
-      return;
-    }
+    if (!user) return;
 
     const { error } = await supabase
       .from('user_locations')
       .delete()
-      .eq('user_id', userId);
+      .eq('user_id', user.id);
 
     if (error) {
       console.error("Error removing location:", error);
@@ -235,37 +280,46 @@ const Index = () => {
     }
   };
 
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigate("/auth");
+  };
+
+  if (!user || isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center space-y-2">
+          <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full mx-auto" />
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="h-16 bg-card border-b border-border flex items-center px-6">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-1">
           <div className="h-8 w-8 rounded-lg bg-gradient-primary flex items-center justify-center shadow-glow">
             <Bus className="h-5 w-5 text-primary-foreground" />
           </div>
           <div>
             <h1 className="text-lg font-bold text-foreground">BusTrack IoT</h1>
             <p className="text-xs text-muted-foreground">
-              {userRole === "admin" ? "Admin Dashboard" : "Live Tracking"}
+              {isAdmin ? "Admin Dashboard" : "Live Tracking"}
             </p>
           </div>
         </div>
+        <Button variant="outline" onClick={handleLogout} size="sm">
+          <LogOut className="mr-2 h-4 w-4" />
+          Logout
+        </Button>
       </header>
 
       <div className="p-6 space-y-6">
-        {/* Role Toggle */}
-        <div className="flex justify-end">
-          <Button
-            variant="outline"
-            onClick={() => setUserRole(userRole === "admin" ? "user" : "admin")}
-            className="border-primary/50"
-          >
-            Switch to {userRole === "admin" ? "User" : "Admin"} View
-          </Button>
-        </div>
-
         {/* Destination Selector - Admin Only */}
-        {userRole === "admin" && (
+        {isAdmin && (
           <div className="bg-card border border-border rounded-lg p-4 flex items-center gap-4">
             <MapPin className="h-5 w-5 text-primary" />
             <div className="flex-1">
@@ -292,7 +346,7 @@ const Index = () => {
         )}
 
         {/* Stats Cards - Admin Only */}
-        {userRole === "admin" && (
+        {isAdmin && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <StatsCard
               title="Active Buses"
@@ -315,34 +369,21 @@ const Index = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Map Widget */}
           <div className="lg:col-span-2 h-[600px]">
-            {isLoading ? (
-              <div className="h-full flex items-center justify-center bg-card rounded-xl border border-border">
-                <div className="text-center space-y-2">
-                  <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full mx-auto" />
-                  <p className="text-sm text-muted-foreground">Loading bus data...</p>
-                </div>
-              </div>
-            ) : (
-              <MapWidget
-                buses={buses}
-                userLocation={userLocation}
-                userLocations={userLocations}
-                onLocationAdd={userRole === "user" ? handleLocationAdd : undefined}
-                onApiKeySet={setGoogleMapsApiKey}
-              />
-            )}
+            <MapWidget
+              buses={buses}
+              userLocation={userLocation}
+              userLocations={userLocations}
+              onLocationAdd={!isAdmin ? handleLocationAdd : undefined}
+              onApiKeySet={setGoogleMapsApiKey}
+            />
           </div>
 
           {/* Bus List */}
           <div className="space-y-4 lg:h-[600px] lg:overflow-y-auto lg:pr-2 custom-scrollbar">
             <h2 className="text-xl font-bold text-foreground mb-4">
-              {userRole === "admin" ? "Fleet Overview" : "Nearby Buses"}
+              {isAdmin ? "Fleet Overview" : "Nearby Buses"}
             </h2>
-            {isLoading ? (
-              <div className="text-center py-8">
-                <p className="text-sm text-muted-foreground">Loading buses...</p>
-              </div>
-            ) : buses.length > 0 ? (
+            {buses.length > 0 ? (
               buses.map((bus) => (
                 <BusCard key={bus.id} {...bus} />
               ))
@@ -355,7 +396,7 @@ const Index = () => {
         </div>
 
         {/* User Location Info */}
-        {userRole === "user" && userLocation && (
+        {!isAdmin && userLocation && (
           <div className="bg-accent/10 border border-accent rounded-lg p-4">
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1">
@@ -379,7 +420,7 @@ const Index = () => {
         )}
 
         {/* Admin view: Show number of passenger locations */}
-        {userRole === "admin" && userLocations.length > 0 && (
+        {isAdmin && userLocations.length > 0 && (
           <div className="bg-primary/10 border border-primary rounded-lg p-4">
             <p className="text-sm text-foreground">
               <strong>Tracking {userLocations.length} passenger location{userLocations.length !== 1 ? 's' : ''}</strong>

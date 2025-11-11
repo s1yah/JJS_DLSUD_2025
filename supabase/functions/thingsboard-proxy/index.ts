@@ -3,7 +3,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const THINGSBOARD_JWT = 'eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhcGl1c2VyQGdtYWlsLmNvbSIsInVzZXJJZCI6IjBhZjcwOWQwLWJjNmItMTFmMC05ZGFjLWYxNGFhN2Y3NTU5ZiIsInNjb3BlcyI6WyJDVVNUT01FUl9VU0VSIl0sInNlc3Npb25JZCI6IjFjNzIwZmFmLTQ3Y2QtNGQxNS04MmJjLWY2ODkzNDQzY2Q0MyIsImV4cCI6MTc2NDQwNDk1NCwiaXNzIjoidGhpbmdzYm9hcmQuaW8iLCJpYXQiOjE3NjI2MDQ5NTQsImZpcnN0TmFtZSI6IkFQSSIsImxhc3ROYW1lIjoiVXNlciIsImVuYWJsZWQiOnRydWUsInByaXZhY3lQb2xpY3lBY2NlcHRlZCI6ZmFsc2UsImlzUHVibGljIjpmYWxzZSwidGVuYW50SWQiOiIwMjcxOGQxMC04MGZlLTExZjAtYTliNS03OTJlMjE5NGE1ZDQiLCJjdXN0b21lcklkIjoiMDQ5YTg3OTAtODBmZS0xMWYwLWE5YjUtNzkyZTIxOTRhNWQ0In0.OCGyYppcDJhm1pmmyJNz6Ma0iZymLVAGs74MxbxbdO4u_tdvlzvcf6IQvjEtrEONKDMBiEe2T3QW3-Vxf0riJQ';
+const THINGSBOARD_JWT = Deno.env.get('THINGSBOARD_JWT');
 
 Deno.serve(async (req) => {
   // Handle CORS preflight requests
@@ -12,6 +12,10 @@ Deno.serve(async (req) => {
   }
 
   try {
+    if (!THINGSBOARD_JWT) {
+      throw new Error('THINGSBOARD_JWT environment variable is not configured');
+    }
+
     console.log('Fetching data from ThingsBoard API...');
     
     const response = await fetch(
@@ -24,9 +28,8 @@ Deno.serve(async (req) => {
     );
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error('ThingsBoard API error:', response.status, errorText);
-      throw new Error(`ThingsBoard API returned ${response.status}: ${errorText}`);
+      console.error('ThingsBoard API error:', response.status);
+      throw new Error(`Failed to fetch bus data`);
     }
 
     const data = await response.json();
@@ -38,11 +41,9 @@ Deno.serve(async (req) => {
     });
   } catch (error) {
     console.error('Error in thingsboard-proxy:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Failed to fetch bus data';
     return new Response(
       JSON.stringify({ 
-        error: errorMessage,
-        details: String(error)
+        error: 'Failed to fetch bus data'
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
