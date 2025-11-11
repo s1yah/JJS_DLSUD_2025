@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { MapWidget } from "@/components/MapWidget";
 import { BusCard } from "@/components/BusCard";
 import { StatsCard } from "@/components/StatsCard";
-import { Bus, Users, MapPin, LogOut } from "lucide-react";
+import { Bus, Users, MapPin, LogOut, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
@@ -311,10 +311,18 @@ const Index = () => {
             </p>
           </div>
         </div>
-        <Button variant="outline" onClick={handleLogout} size="sm">
-          <LogOut className="mr-2 h-4 w-4" />
-          Logout
-        </Button>
+        <div className="flex items-center gap-2">
+          {isAdmin && (
+            <Button variant="outline" onClick={() => navigate("/admin")} size="sm">
+              <Settings className="mr-2 h-4 w-4" />
+              Admin
+            </Button>
+          )}
+          <Button variant="outline" onClick={handleLogout} size="sm">
+            <LogOut className="mr-2 h-4 w-4" />
+            Logout
+          </Button>
+        </div>
       </header>
 
       <div className="p-6 space-y-6">

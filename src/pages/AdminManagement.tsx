@@ -1,0 +1,215 @@
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { toast } from "sonner";
+import { Trash2, UserPlus, ArrowLeft } from "lucide-react";
+import type { User } from "@supabase/supabase-js";
+
+interface UserRole {
+  id: string;
+  user_id: string;
+  role: "admin" | "moderator" | "user";
+  created_at: string;
+}
+
+const AdminManagement = () => {
+  const navigate = useNavigate();
+  const [user, setUser] = useState<User | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [userRoles, setUserRoles] = useState<UserRole[]>([]);
+  const [newUserId, setNewUserId] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        navigate("/auth");
+        return;
+      }
+      
+      setUser(session.user);
+
+      // Check if user is admin
+      const { data } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", session.user.id)
+        .eq("role", "admin")
+        .maybeSingle();
+      
+      if (!data) {
+        toast.error("Access denied: Admin only");
+        navigate("/");
+        return;
+      }
+      
+      setIsAdmin(true);
+      fetchUserRoles();
+    };
+
+    checkAuth();
+  }, [navigate]);
+
+  const fetchUserRoles = async () => {
+    const { data, error } = await supabase
+      .from("user_roles")
+      .select("*")
+      .order("created_at", { ascending: false });
+    
+    if (error) {
+      console.error("Error fetching user roles:", error);
+      toast.error("Failed to load user roles");
+    } else {
+      setUserRoles(data || []);
+    }
+  };
+
+  const handleAddAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUserId.trim()) {
+      toast.error("Please enter a user ID");
+      return;
+    }
+
+    setLoading(true);
+    const { error } = await supabase
+      .from("user_roles")
+      .insert({
+        user_id: newUserId.trim(),
+        role: "admin",
+      });
+
+    if (error) {
+      console.error("Error adding admin role:", error);
+      toast.error(error.message || "Failed to add admin role");
+    } else {
+      toast.success("Admin role added successfully");
+      setNewUserId("");
+      fetchUserRoles();
+    }
+    setLoading(false);
+  };
+
+  const handleRemoveRole = async (roleId: string) => {
+    const { error } = await supabase
+      .from("user_roles")
+      .delete()
+      .eq("id", roleId);
+
+    if (error) {
+      console.error("Error removing role:", error);
+      toast.error("Failed to remove role");
+    } else {
+      toast.success("Role removed successfully");
+      fetchUserRoles();
+    }
+  };
+
+  if (!user || !isAdmin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center space-y-2">
+          <div className="animate-spin h-8 w-8 border-2 border-primary border-t-transparent rounded-full mx-auto" />
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background p-6">
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div className="flex items-center gap-4">
+          <Button variant="outline" size="sm" onClick={() => navigate("/")}>
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Dashboard
+          </Button>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Admin Management</CardTitle>
+            <CardDescription>
+              Manage user roles and permissions
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Add Admin Form */}
+            <div className="border-b border-border pb-6">
+              <h3 className="text-sm font-semibold text-foreground mb-4">Add Admin Role</h3>
+              <form onSubmit={handleAddAdmin} className="flex gap-2">
+                <Input
+                  placeholder="Enter user ID (from auth.users)"
+                  value={newUserId}
+                  onChange={(e) => setNewUserId(e.target.value)}
+                  className="flex-1"
+                />
+                <Button type="submit" disabled={loading}>
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Add Admin
+                </Button>
+              </form>
+              <p className="text-xs text-muted-foreground mt-2">
+                Your user ID: <code className="bg-muted px-1 py-0.5 rounded">{user.id}</code>
+              </p>
+            </div>
+
+            {/* User Roles List */}
+            <div>
+              <h3 className="text-sm font-semibold text-foreground mb-4">Current User Roles</h3>
+              {userRoles.length > 0 ? (
+                <div className="space-y-2">
+                  {userRoles.map((userRole) => (
+                    <div
+                      key={userRole.id}
+                      className="flex items-center justify-between p-3 bg-muted rounded-lg"
+                    >
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-foreground">
+                          User ID: {userRole.user_id}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Role: <span className="font-semibold">{userRole.role}</span>
+                        </p>
+                      </div>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => handleRemoveRole(userRole.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  No user roles found
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Instructions Card */}
+        <Card className="bg-primary/5 border-primary/20">
+          <CardHeader>
+            <CardTitle className="text-sm">How to Use</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm text-muted-foreground">
+            <p>1. Users must first sign up through the /auth page</p>
+            <p>2. Copy their user ID from the browser console after login (auth.uid())</p>
+            <p>3. Add their user ID here to grant admin privileges</p>
+            <p>4. Admins can view all passenger locations and bus ETAs</p>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+};
+
+export default AdminManagement;
