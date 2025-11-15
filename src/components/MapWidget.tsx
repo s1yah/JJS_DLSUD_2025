@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback } from "react";
 import { GoogleMap, useJsApiLoader, Marker, Polyline } from "@react-google-maps/api";
-import { MapPin } from "lucide-react";
+import { MapPin, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 interface MapWidgetProps {
   buses?: Array<{
@@ -406,11 +407,49 @@ const MapWithLoader = ({ apiKey, buses, userLocation, userLocations, onLocationA
 // Main MapWidget Component
 export const MapWidget = ({ buses = [], userLocation, userLocations = [], onLocationAdd, onApiKeySet }: MapWidgetProps) => {
   const [confirmedApiKey, setConfirmedApiKey] = useState<string | null>(null);
+  const [isLoadingKey, setIsLoadingKey] = useState(true);
+
+  useEffect(() => {
+    const fetchApiKey = async () => {
+      try {
+        setIsLoadingKey(true);
+        const { data, error } = await supabase.functions.invoke('get-google-maps-key');
+        
+        if (error) throw error;
+        
+        if (data?.apiKey) {
+          setConfirmedApiKey(data.apiKey);
+          onApiKeySet?.(data.apiKey);
+          toast.success("Google Maps loaded successfully");
+        } else {
+          toast.error("Google Maps API key not found in database");
+        }
+      } catch (error) {
+        console.error("Error fetching Google Maps API key:", error);
+        toast.error("Failed to load Google Maps configuration");
+      } finally {
+        setIsLoadingKey(false);
+      }
+    };
+
+    fetchApiKey();
+  }, [onApiKeySet]);
 
   const handleApiKeySubmit = (key: string) => {
     setConfirmedApiKey(key);
     onApiKeySet?.(key);
   };
+
+  if (isLoadingKey) {
+    return (
+      <div className="h-full flex items-center justify-center bg-card rounded-xl border border-border">
+        <div className="text-center space-y-2">
+          <Loader2 className="h-12 w-12 text-primary mx-auto animate-spin" />
+          <p className="text-sm text-muted-foreground">Loading map...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!confirmedApiKey) {
     return <ApiKeyInput onSubmit={handleApiKeySubmit} />;
