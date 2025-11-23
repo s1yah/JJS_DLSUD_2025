@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Trash2, UserPlus, ArrowLeft } from "lucide-react";
+import { Trash2, UserPlus, ArrowLeft, Bus, Edit2, Check, X } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 
 interface UserRole {
@@ -15,6 +15,14 @@ interface UserRole {
   created_at: string;
 }
 
+interface BusConfiguration {
+  id: string;
+  bus_name: string;
+  max_passengers: number;
+  created_at: string;
+  updated_at: string;
+}
+
 const AdminManagement = () => {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
@@ -22,6 +30,11 @@ const AdminManagement = () => {
   const [userRoles, setUserRoles] = useState<UserRole[]>([]);
   const [newUserId, setNewUserId] = useState("");
   const [loading, setLoading] = useState(false);
+  const [busConfigs, setBusConfigs] = useState<BusConfiguration[]>([]);
+  const [newBusName, setNewBusName] = useState("");
+  const [newMaxPassengers, setNewMaxPassengers] = useState("");
+  const [editingBus, setEditingBus] = useState<string | null>(null);
+  const [editMaxPassengers, setEditMaxPassengers] = useState("");
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -49,6 +62,7 @@ const AdminManagement = () => {
       
       setIsAdmin(true);
       fetchUserRoles();
+      fetchBusConfigs();
     };
 
     checkAuth();
@@ -106,6 +120,88 @@ const AdminManagement = () => {
     } else {
       toast.success("Role removed successfully");
       fetchUserRoles();
+    }
+  };
+
+  const fetchBusConfigs = async () => {
+    const { data, error } = await supabase
+      .from("bus_configurations")
+      .select("*")
+      .order("created_at", { ascending: false });
+    
+    if (error) {
+      console.error("Error fetching bus configurations:", error);
+      toast.error("Failed to load bus configurations");
+    } else {
+      setBusConfigs(data || []);
+    }
+  };
+
+  const handleAddBusConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const maxPass = parseInt(newMaxPassengers);
+    
+    if (!newBusName.trim() || isNaN(maxPass) || maxPass <= 0) {
+      toast.error("Please enter valid bus name and passenger count");
+      return;
+    }
+
+    setLoading(true);
+    const { error } = await supabase
+      .from("bus_configurations")
+      .insert({
+        bus_name: newBusName.trim(),
+        max_passengers: maxPass,
+      });
+
+    if (error) {
+      console.error("Error adding bus configuration:", error);
+      toast.error(error.message || "Failed to add bus configuration");
+    } else {
+      toast.success("Bus configuration added successfully");
+      setNewBusName("");
+      setNewMaxPassengers("");
+      fetchBusConfigs();
+    }
+    setLoading(false);
+  };
+
+  const handleUpdateBusConfig = async (busId: string) => {
+    const maxPass = parseInt(editMaxPassengers);
+    
+    if (isNaN(maxPass) || maxPass <= 0) {
+      toast.error("Please enter valid passenger count");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("bus_configurations")
+      .update({ max_passengers: maxPass })
+      .eq("id", busId);
+
+    if (error) {
+      console.error("Error updating bus configuration:", error);
+      toast.error("Failed to update bus configuration");
+    } else {
+      toast.success("Bus configuration updated successfully");
+      setEditingBus(null);
+      setEditMaxPassengers("");
+      fetchBusConfigs();
+    }
+  };
+
+  const handleDeleteBusConfig = async (busId: string) => {
+    const { error } = await supabase
+      .from("bus_configurations")
+      .delete()
+      .eq("id", busId);
+
+    if (error) {
+      console.error("Error deleting bus configuration:", error);
+      toast.error("Failed to delete bus configuration");
+    } else {
+      toast.success("Bus configuration deleted successfully");
+      fetchBusConfigs();
     }
   };
 
@@ -189,6 +285,125 @@ const AdminManagement = () => {
               ) : (
                 <p className="text-sm text-muted-foreground text-center py-4">
                   No user roles found
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Bus Seat Configuration Card */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Bus className="h-5 w-5" />
+              Bus Seat Configuration
+            </CardTitle>
+            <CardDescription>
+              Manage maximum passenger capacity for each bus
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Add Bus Configuration Form */}
+            <div className="border-b border-border pb-6">
+              <h3 className="text-sm font-semibold text-foreground mb-4">Add New Bus</h3>
+              <form onSubmit={handleAddBusConfig} className="flex gap-2">
+                <Input
+                  placeholder="Bus name (e.g., Bus 101)"
+                  value={newBusName}
+                  onChange={(e) => setNewBusName(e.target.value)}
+                  className="flex-1"
+                />
+                <Input
+                  type="number"
+                  placeholder="Max passengers"
+                  value={newMaxPassengers}
+                  onChange={(e) => setNewMaxPassengers(e.target.value)}
+                  className="w-32"
+                  min="1"
+                />
+                <Button type="submit" disabled={loading}>
+                  <Bus className="h-4 w-4 mr-2" />
+                  Add Bus
+                </Button>
+              </form>
+            </div>
+
+            {/* Bus Configurations List */}
+            <div>
+              <h3 className="text-sm font-semibold text-foreground mb-4">Current Bus Configurations</h3>
+              {busConfigs.length > 0 ? (
+                <div className="space-y-2">
+                  {busConfigs.map((config) => (
+                    <div
+                      key={config.id}
+                      className="flex items-center justify-between p-3 bg-muted rounded-lg"
+                    >
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-foreground">
+                          {config.bus_name}
+                        </p>
+                        {editingBus === config.id ? (
+                          <div className="flex items-center gap-2 mt-2">
+                            <Input
+                              type="number"
+                              value={editMaxPassengers}
+                              onChange={(e) => setEditMaxPassengers(e.target.value)}
+                              className="w-32 h-8"
+                              min="1"
+                              placeholder="Max passengers"
+                            />
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleUpdateBusConfig(config.id)}
+                            >
+                              <Check className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                setEditingBus(null);
+                                setEditMaxPassengers("");
+                              }}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">
+                            Max Passengers: <span className="font-semibold">{config.max_passengers}</span>
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        {editingBus !== config.id && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setEditingBus(config.id);
+                              setEditMaxPassengers(config.max_passengers.toString());
+                            }}
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => handleDeleteBusConfig(config.id)}
+                          disabled={editingBus === config.id}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  No bus configurations found
                 </p>
               )}
             </div>

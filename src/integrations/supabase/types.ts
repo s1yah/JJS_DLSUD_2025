@@ -14,6 +14,30 @@ export type Database = {
   }
   public: {
     Tables: {
+      bus_configurations: {
+        Row: {
+          bus_name: string
+          created_at: string
+          id: string
+          max_passengers: number
+          updated_at: string
+        }
+        Insert: {
+          bus_name: string
+          created_at?: string
+          id?: string
+          max_passengers: number
+          updated_at?: string
+        }
+        Update: {
+          bus_name?: string
+          created_at?: string
+          id?: string
+          max_passengers?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       user_locations: {
         Row: {
           created_at: string | null
