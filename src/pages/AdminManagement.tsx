@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Trash2, UserPlus, ArrowLeft, Bus, Edit2, Check, X, Power } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
@@ -374,12 +375,18 @@ const AdminManagement = () => {
             <div className="border-b border-border pb-6">
               <h3 className="text-sm font-semibold text-foreground mb-4">Add New Bus</h3>
               <form onSubmit={handleAddBusConfig} className="flex gap-2">
-                <Input
-                  placeholder="Bus name (e.g., Bus 101)"
-                  value={newBusName}
-                  onChange={(e) => setNewBusName(e.target.value)}
-                  className="flex-1"
-                />
+                <Select value={newBusName} onValueChange={setNewBusName}>
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Select a bus" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-background border border-border z-50">
+                    {busConfigs.map((config) => (
+                      <SelectItem key={config.id} value={config.bus_name}>
+                        {config.bus_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Input
                   type="number"
                   placeholder="Max passengers"
