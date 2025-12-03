@@ -4,8 +4,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Trash2, UserPlus, ArrowLeft, Bus, Edit2, Check, X } from "lucide-react";
+import { Trash2, UserPlus, ArrowLeft, Bus, Edit2, Check, X, Power } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 
 interface UserRole {
@@ -35,6 +37,7 @@ const AdminManagement = () => {
   const [newMaxPassengers, setNewMaxPassengers] = useState("");
   const [editingBus, setEditingBus] = useState<string | null>(null);
   const [editMaxPassengers, setEditMaxPassengers] = useState("");
+  const [userDashboardEnabled, setUserDashboardEnabled] = useState(true);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -63,6 +66,7 @@ const AdminManagement = () => {
       setIsAdmin(true);
       fetchUserRoles();
       fetchBusConfigs();
+      fetchDashboardSetting();
     };
 
     checkAuth();
@@ -79,6 +83,36 @@ const AdminManagement = () => {
       toast.error("Failed to load user roles");
     } else {
       setUserRoles(data || []);
+    }
+  };
+
+  const fetchDashboardSetting = async () => {
+    const { data, error } = await supabase
+      .from("app_settings")
+      .select("value")
+      .eq("key", "user_dashboard_enabled")
+      .maybeSingle();
+    
+    if (!error && data) {
+      const enabled = JSON.parse(data.value as string);
+      setUserDashboardEnabled(enabled === true || enabled === "true");
+    }
+  };
+
+  const handleToggleDashboard = async (enabled: boolean) => {
+    setUserDashboardEnabled(enabled);
+    
+    const { error } = await supabase
+      .from("app_settings")
+      .update({ value: JSON.stringify(enabled) })
+      .eq("key", "user_dashboard_enabled");
+
+    if (error) {
+      console.error("Error updating dashboard setting:", error);
+      toast.error("Failed to update setting");
+      setUserDashboardEnabled(!enabled); // Revert on error
+    } else {
+      toast.success(enabled ? "User dashboard enabled" : "User dashboard disabled");
     }
   };
 
@@ -226,6 +260,39 @@ const AdminManagement = () => {
           </Button>
         </div>
 
+        {/* Dashboard Control Card */}
+        <Card className="border-2 border-primary/20">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Power className="h-5 w-5" />
+              Dashboard Control
+            </CardTitle>
+            <CardDescription>
+              Enable or disable the user dashboard for all non-admin users
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
+              <div className="space-y-1">
+                <Label htmlFor="dashboard-toggle" className="text-sm font-medium">
+                  User Dashboard
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  {userDashboardEnabled 
+                    ? "Users can access the dashboard and track buses" 
+                    : "Users will see a disabled message when accessing the dashboard"
+                  }
+                </p>
+              </div>
+              <Switch
+                id="dashboard-toggle"
+                checked={userDashboardEnabled}
+                onCheckedChange={handleToggleDashboard}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle>Admin Management</CardTitle>
@@ -299,7 +366,7 @@ const AdminManagement = () => {
               Bus Seat Configuration
             </CardTitle>
             <CardDescription>
-              Manage maximum passenger capacity for each bus
+              Manage maximum passenger capacity for each bus. Passenger counts from ThingsBoard are checked against these limits.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -420,6 +487,8 @@ const AdminManagement = () => {
             <p>2. Copy their user ID from the browser console after login (auth.uid())</p>
             <p>3. Add their user ID here to grant admin privileges</p>
             <p>4. Admins can view all passenger locations and bus ETAs</p>
+            <p>5. Configure bus capacities to receive alerts when passenger count exceeds limits</p>
+            <p>6. Use the dashboard toggle to temporarily disable user access</p>
           </CardContent>
         </Card>
       </div>

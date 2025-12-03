@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { MapWidget } from "@/components/MapWidget";
 import { BusCard } from "@/components/BusCard";
 import { StatsCard } from "@/components/StatsCard";
-import { Bus, Users, MapPin, LogOut, Settings } from "lucide-react";
+import { Bus, Users, MapPin, LogOut, Settings, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
@@ -18,6 +18,12 @@ const DESTINATIONS = {
 
 type DestinationKey = keyof typeof DESTINATIONS;
 
+interface BusConfiguration {
+  id: string;
+  bus_name: string;
+  max_passengers: number;
+}
+
 const Index = () => {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
@@ -27,6 +33,8 @@ const Index = () => {
   const [selectedDestination, setSelectedDestination] = useState<DestinationKey>("PITX");
   const [googleMapsApiKey, setGoogleMapsApiKey] = useState<string | null>(null);
   const [userLocations, setUserLocations] = useState<Array<{ id: string; lat: number; lng: number; user_id: string }>>([]);
+  const [busConfigs, setBusConfigs] = useState<BusConfiguration[]>([]);
+  const [userDashboardEnabled, setUserDashboardEnabled] = useState<boolean>(true);
   const [buses, setBuses] = useState<Array<{
     id: string;
     name: string;
@@ -84,6 +92,63 @@ const Index = () => {
     checkAdminRole();
   }, [user]);
 
+  // Fetch bus configurations
+  useEffect(() => {
+    if (!session) return;
+
+    const fetchBusConfigs = async () => {
+      const { data, error } = await supabase
+        .from("bus_configurations")
+        .select("*");
+      
+      if (!error && data) {
+        setBusConfigs(data);
+      }
+    };
+
+    fetchBusConfigs();
+  }, [session]);
+
+  // Check if user dashboard is enabled
+  useEffect(() => {
+    if (!session) return;
+
+    const checkDashboardEnabled = async () => {
+      const { data, error } = await supabase
+        .from("app_settings")
+        .select("value")
+        .eq("key", "user_dashboard_enabled")
+        .maybeSingle();
+      
+      if (!error && data) {
+        const enabled = JSON.parse(data.value as string);
+        setUserDashboardEnabled(enabled === true || enabled === "true");
+      }
+    };
+
+    checkDashboardEnabled();
+
+    // Subscribe to real-time updates for settings
+    const channel = supabase
+      .channel('app_settings_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'app_settings'
+        },
+        () => {
+          checkDashboardEnabled();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [session]);
+
   useEffect(() => {
     if (!session) return;
 
@@ -110,6 +175,15 @@ const Index = () => {
         const longitude = data.longitude?.[0]?.value ? parseFloat(data.longitude[0].value) : -74.006;
         const peopleCount = data.peopleCount?.[0]?.value ? parseInt(data.peopleCount[0].value) : 0;
 
+        // Get capacity from bus configuration or use default
+        const busConfig = busConfigs.find(config => config.bus_name === "Bus 101");
+        const capacity = busConfig?.max_passengers || 40;
+
+        // Check if over capacity
+        if (peopleCount > capacity) {
+          toast.warning(`Bus 101 is over capacity! ${peopleCount}/${capacity} passengers`);
+        }
+
         // Calculate ETA if Google Maps API key is available
         let eta = "Calculating...";
         if (googleMapsApiKey && isAdmin) {
@@ -125,7 +199,7 @@ const Index = () => {
             lat: latitude,
             lng: longitude,
             passengers: peopleCount,
-            capacity: 40,
+            capacity,
             eta,
             status: "active" as const,
             location: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`,
@@ -147,7 +221,7 @@ const Index = () => {
     const interval = setInterval(fetchBusData, 30000);
     
     return () => clearInterval(interval);
-  }, [session, googleMapsApiKey, selectedDestination, isAdmin]);
+  }, [session, googleMapsApiKey, selectedDestination, isAdmin, busConfigs]);
 
   // Calculate ETA using Google Routes API
   const calculateETA = async (busLat: number, busLng: number, destLat: number, destLng: number, apiKey: string) => {
@@ -296,6 +370,27 @@ const Index = () => {
     );
   }
 
+  // Show disabled message for non-admin users when dashboard is disabled
+  if (!isAdmin && !userDashboardEnabled) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-6">
+        <div className="text-center space-y-4 max-w-md">
+          <div className="h-16 w-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
+            <AlertTriangle className="h-8 w-8 text-destructive" />
+          </div>
+          <h1 className="text-2xl font-bold text-foreground">Dashboard Unavailable</h1>
+          <p className="text-muted-foreground">
+            The user dashboard has been temporarily disabled by the administrator. Please check back later.
+          </p>
+          <Button variant="outline" onClick={handleLogout}>
+            <LogOut className="mr-2 h-4 w-4" />
+            Logout
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -370,6 +465,23 @@ const Index = () => {
               trend={{ value: 8, positive: true }}
               subtitle="Across all buses"
             />
+          </div>
+        )}
+
+        {/* Capacity Warnings - Admin Only */}
+        {isAdmin && buses.some(bus => bus.passengers > bus.capacity) && (
+          <div className="bg-destructive/10 border border-destructive rounded-lg p-4">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              <div>
+                <p className="text-sm font-semibold text-destructive">Capacity Alert</p>
+                <p className="text-xs text-muted-foreground">
+                  {buses.filter(bus => bus.passengers > bus.capacity).map(bus => 
+                    `${bus.name}: ${bus.passengers}/${bus.capacity} passengers`
+                  ).join(', ')}
+                </p>
+              </div>
+            </div>
           </div>
         )}
 
