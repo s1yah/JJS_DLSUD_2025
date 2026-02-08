@@ -2,3 +2,6 @@ project_id = "hdfytolttfwuafujbwit"
 
 [functions.thingsboard-proxy]
 verify_jwt = true
+
+[functions.camlytics-receiver]
+verify_jwt = false
