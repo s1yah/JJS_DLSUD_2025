@@ -226,6 +226,21 @@ const AdminManagement = () => {
     }
   };
 
+  const handleToggleBusStatus = async (busId: string, currentStatus: boolean) => {
+    const { error } = await supabase
+      .from("bus_configurations")
+      .update({ is_active: !currentStatus })
+      .eq("id", busId);
+
+    if (error) {
+      console.error("Error updating bus status:", error);
+      toast.error("Failed to update bus status");
+    } else {
+      toast.success(`Bus ${!currentStatus ? "activated" : "deactivated"} successfully`);
+      fetchBusConfigs();
+    }
+  };
+
   const handleDeleteBusConfig = async (busId: string) => {
     const { error } = await supabase
       .from("bus_configurations")
