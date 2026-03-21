@@ -8,7 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Trash2, UserPlus, ArrowLeft, Bus, Edit2, Check, X, Power } from "lucide-react";
+import { Trash2, UserPlus, ArrowLeft, Bus, Edit2, Check, X, Power, ToggleLeft } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 
 interface UserRole {
@@ -22,6 +22,7 @@ interface BusConfiguration {
   id: string;
   bus_name: string;
   max_passengers: number;
+  is_active: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -225,6 +226,21 @@ const AdminManagement = () => {
     }
   };
 
+  const handleToggleBusStatus = async (busId: string, currentStatus: boolean) => {
+    const { error } = await supabase
+      .from("bus_configurations")
+      .update({ is_active: !currentStatus })
+      .eq("id", busId);
+
+    if (error) {
+      console.error("Error updating bus status:", error);
+      toast.error("Failed to update bus status");
+    } else {
+      toast.success(`Bus ${!currentStatus ? "activated" : "deactivated"} successfully`);
+      fetchBusConfigs();
+    }
+  };
+
   const handleDeleteBusConfig = async (busId: string) => {
     const { error } = await supabase
       .from("bus_configurations")
@@ -410,12 +426,17 @@ const AdminManagement = () => {
                   {busConfigs.map((config) => (
                     <div
                       key={config.id}
-                      className="flex items-center justify-between p-3 bg-muted rounded-lg"
+                      className={`flex items-center justify-between p-3 rounded-lg ${config.is_active ? 'bg-muted' : 'bg-muted/50 opacity-70'}`}
                     >
                       <div className="flex-1">
-                        <p className="text-sm font-medium text-foreground">
-                          {config.bus_name}
-                        </p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium text-foreground">
+                            {config.bus_name}
+                          </p>
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${config.is_active ? 'bg-primary/10 text-primary' : 'bg-destructive/10 text-destructive'}`}>
+                            {config.is_active ? "Active" : "Inactive"}
+                          </span>
+                        </div>
                         {editingBus === config.id ? (
                           <div className="flex items-center gap-2 mt-2">
                             <Input
@@ -450,7 +471,17 @@ const AdminManagement = () => {
                           </p>
                         )}
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 items-center">
+                        <div className="flex items-center gap-2">
+                          <Label htmlFor={`bus-status-${config.id}`} className="text-xs text-muted-foreground sr-only">
+                            Status
+                          </Label>
+                          <Switch
+                            id={`bus-status-${config.id}`}
+                            checked={config.is_active}
+                            onCheckedChange={() => handleToggleBusStatus(config.id, config.is_active)}
+                          />
+                        </div>
                         {editingBus !== config.id && (
                           <Button
                             variant="outline"
