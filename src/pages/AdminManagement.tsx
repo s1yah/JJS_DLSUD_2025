@@ -391,18 +391,12 @@ const AdminManagement = () => {
             <div className="border-b border-border pb-6">
               <h3 className="text-sm font-semibold text-foreground mb-4">Add New Bus</h3>
               <form onSubmit={handleAddBusConfig} className="flex gap-2">
-                <Select value={newBusName} onValueChange={setNewBusName}>
-                  <SelectTrigger className="flex-1">
-                    <SelectValue placeholder="Select a bus" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-background border border-border z-50">
-                    {busConfigs.map((config) => (
-                      <SelectItem key={config.id} value={config.bus_name}>
-                        {config.bus_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Input
+                  placeholder="Enter bus name (e.g. Bus 101)"
+                  value={newBusName}
+                  onChange={(e) => setNewBusName(e.target.value)}
+                  className="flex-1"
+                />
                 <Input
                   type="number"
                   placeholder="Max passengers"
