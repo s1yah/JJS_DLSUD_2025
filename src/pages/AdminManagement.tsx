@@ -426,12 +426,17 @@ const AdminManagement = () => {
                   {busConfigs.map((config) => (
                     <div
                       key={config.id}
-                      className="flex items-center justify-between p-3 bg-muted rounded-lg"
+                      className={`flex items-center justify-between p-3 rounded-lg ${config.is_active ? 'bg-muted' : 'bg-muted/50 opacity-70'}`}
                     >
                       <div className="flex-1">
-                        <p className="text-sm font-medium text-foreground">
-                          {config.bus_name}
-                        </p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium text-foreground">
+                            {config.bus_name}
+                          </p>
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${config.is_active ? 'bg-primary/10 text-primary' : 'bg-destructive/10 text-destructive'}`}>
+                            {config.is_active ? "Active" : "Inactive"}
+                          </span>
+                        </div>
                         {editingBus === config.id ? (
                           <div className="flex items-center gap-2 mt-2">
                             <Input
@@ -466,7 +471,17 @@ const AdminManagement = () => {
                           </p>
                         )}
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 items-center">
+                        <div className="flex items-center gap-2">
+                          <Label htmlFor={`bus-status-${config.id}`} className="text-xs text-muted-foreground sr-only">
+                            Status
+                          </Label>
+                          <Switch
+                            id={`bus-status-${config.id}`}
+                            checked={config.is_active}
+                            onCheckedChange={() => handleToggleBusStatus(config.id, config.is_active)}
+                          />
+                        </div>
                         {editingBus !== config.id && (
                           <Button
                             variant="outline"
