@@ -43,6 +43,7 @@ export type Database = {
           bus_name: string
           created_at: string
           id: string
+          is_active: boolean
           max_passengers: number
           updated_at: string
         }
@@ -50,6 +51,7 @@ export type Database = {
           bus_name: string
           created_at?: string
           id?: string
+          is_active?: boolean
           max_passengers: number
           updated_at?: string
         }
@@ -57,6 +59,7 @@ export type Database = {
           bus_name?: string
           created_at?: string
           id?: string
+          is_active?: boolean
           max_passengers?: number
           updated_at?: string
         }

@@ -1,0 +1,1 @@
+ALTER TABLE public.bus_configurations ADD COLUMN is_active boolean NOT NULL DEFAULT true;
