@@ -22,6 +22,7 @@ interface BusConfiguration {
   id: string;
   bus_name: string;
   max_passengers: number;
+  is_active: boolean;
   created_at: string;
   updated_at: string;
 }
