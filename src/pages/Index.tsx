@@ -22,6 +22,7 @@ interface BusConfiguration {
   id: string;
   bus_name: string;
   max_passengers: number;
+  is_active: boolean;
 }
 
 const Index = () => {
@@ -178,6 +179,14 @@ const Index = () => {
         // Get capacity from bus configuration or use default
         const busConfig = busConfigs.find(config => config.bus_name === "Bus 101");
         const capacity = busConfig?.max_passengers || 40;
+        const isBusActive = busConfig?.is_active ?? true;
+
+        // If bus is inactive, show empty list
+        if (!isBusActive) {
+          setBuses([]);
+          setIsLoading(false);
+          return;
+        }
 
         // Check if over capacity
         if (peopleCount > capacity) {
