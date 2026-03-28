@@ -132,7 +132,7 @@ const MapComponent = ({
   isLoaded
 }: MapWidgetProps & { apiKey: string; isLoaded: boolean }) => {
   const [map, setMap] = useState<google.maps.Map | null>(null);
-  const [routes, setRoutes] = useState<Array<{ path: google.maps.LatLngLiteral[]; busId: string }>>([]);
+  
 
   const onLoad = useCallback((map: google.maps.Map) => {
     setMap(map);
