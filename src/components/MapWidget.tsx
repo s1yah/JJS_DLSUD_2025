@@ -253,19 +253,8 @@ const MapComponent = ({
           />
         ))}
 
-        {/* Route Polylines */}
-        {routes.map((route, index) => (
-          <Polyline
-            key={`route-${route.busId}-${index}`}
-            path={route.path}
-            options={{
-              strokeColor: "#3b9bde",
-              strokeOpacity: 0.8,
-              strokeWeight: 4,
-              geodesic: true,
-            }}
-          />
-        ))}
+
+
       </GoogleMap>
 
       <div className="absolute top-4 left-4 bg-card/90 backdrop-blur-sm rounded-lg px-4 py-2 border border-border shadow-card">
