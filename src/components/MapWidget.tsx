@@ -261,11 +261,8 @@ const MapComponent = ({
         <p className="text-sm text-muted-foreground">
           {onLocationAdd ? "Click on map to add your location" : "Real-time bus tracking with routes"}
         </p>
-        {routes.length > 0 && (
-          <p className="text-xs text-accent mt-1">
-            Showing {routes.length} route{routes.length !== 1 ? "s" : ""} to your location
-          </p>
-        )}
+
+
       </div>
     </div>
   );
