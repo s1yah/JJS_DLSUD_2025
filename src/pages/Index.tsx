@@ -195,7 +195,7 @@ const Index = () => {
 
         // Calculate ETA if Google Maps API key is available
         let eta = "Calculating...";
-        if (googleMapsApiKey && isAdmin) {
+        if (googleMapsApiKey) {
           const destination = DESTINATIONS[selectedDestination];
           eta = await calculateETA(latitude, longitude, destination.lat, destination.lng, googleMapsApiKey);
         }
