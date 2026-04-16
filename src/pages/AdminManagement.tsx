@@ -748,6 +748,7 @@ const AdminManagement = () => {
             </Card>
           </TabsContent>
         </Tabs>
+      </div>
     </div>
   );
 };
