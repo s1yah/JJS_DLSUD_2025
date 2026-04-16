@@ -54,7 +54,7 @@ const AdminManagement = () => {
   const [userDashboardEnabled, setUserDashboardEnabled] = useState(true);
   const [loggingActive, setLoggingActive] = useState(false);
   const [passengerLogs, setPassengerLogs] = useState<PassengerLog[]>([]);
-  const loggingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const loggingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     const checkAuth = async () => {
