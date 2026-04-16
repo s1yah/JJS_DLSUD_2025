@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -7,9 +7,21 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Trash2, UserPlus, ArrowLeft, Bus, Edit2, Check, X, Power, ToggleLeft } from "lucide-react";
+import { Trash2, UserPlus, ArrowLeft, Bus, Edit2, Check, X, Power, ClipboardList, Play, Square } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
+
+interface PassengerLog {
+  id: string;
+  bus_name: string;
+  channel_id: string | null;
+  current_count: number;
+  total_enters: number;
+  total_exits: number;
+  logged_at: string;
+}
 
 interface UserRole {
   id: string;
