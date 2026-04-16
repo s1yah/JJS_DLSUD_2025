@@ -65,6 +65,39 @@ export type Database = {
         }
         Relationships: []
       }
+      passenger_count_logs: {
+        Row: {
+          bus_name: string
+          channel_id: string | null
+          created_at: string
+          current_count: number
+          id: string
+          logged_at: string
+          total_enters: number
+          total_exits: number
+        }
+        Insert: {
+          bus_name: string
+          channel_id?: string | null
+          created_at?: string
+          current_count?: number
+          id?: string
+          logged_at?: string
+          total_enters?: number
+          total_exits?: number
+        }
+        Update: {
+          bus_name?: string
+          channel_id?: string | null
+          created_at?: string
+          current_count?: number
+          id?: string
+          logged_at?: string
+          total_enters?: number
+          total_exits?: number
+        }
+        Relationships: []
+      }
       passenger_counts: {
         Row: {
           channel_id: string
