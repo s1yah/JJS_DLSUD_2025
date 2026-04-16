@@ -84,6 +84,7 @@ const AdminManagement = () => {
       fetchUserRoles();
       fetchBusConfigs();
       fetchDashboardSetting();
+      fetchPassengerLogs();
     };
 
     checkAuth();
