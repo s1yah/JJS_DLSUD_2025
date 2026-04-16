@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -7,9 +7,21 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { Trash2, UserPlus, ArrowLeft, Bus, Edit2, Check, X, Power, ToggleLeft } from "lucide-react";
+import { Trash2, UserPlus, ArrowLeft, Bus, Edit2, Check, X, Power, ClipboardList, Play, Square } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
+
+interface PassengerLog {
+  id: string;
+  bus_name: string;
+  channel_id: string | null;
+  current_count: number;
+  total_enters: number;
+  total_exits: number;
+  logged_at: string;
+}
 
 interface UserRole {
   id: string;
@@ -40,6 +52,9 @@ const AdminManagement = () => {
   const [editingBus, setEditingBus] = useState<string | null>(null);
   const [editMaxPassengers, setEditMaxPassengers] = useState("");
   const [userDashboardEnabled, setUserDashboardEnabled] = useState(true);
+  const [loggingActive, setLoggingActive] = useState(false);
+  const [passengerLogs, setPassengerLogs] = useState<PassengerLog[]>([]);
+  const loggingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -69,6 +84,7 @@ const AdminManagement = () => {
       fetchUserRoles();
       fetchBusConfigs();
       fetchDashboardSetting();
+      fetchPassengerLogs();
     };
 
     checkAuth();
@@ -256,6 +272,107 @@ const AdminManagement = () => {
     }
   };
 
+  const fetchPassengerLogs = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("passenger_count_logs")
+      .select("*")
+      .order("logged_at", { ascending: false })
+      .limit(200);
+
+    if (error) {
+      console.error("Error fetching passenger logs:", error);
+    } else {
+      setPassengerLogs(data || []);
+    }
+  }, []);
+
+  const logPassengerSnapshot = useCallback(async () => {
+    // Get all active buses and their current passenger counts
+    const { data: activeBuses, error: busError } = await supabase
+      .from("bus_configurations")
+      .select("*")
+      .eq("is_active", true);
+
+    if (busError || !activeBuses?.length) {
+      console.log("No active buses to log");
+      return;
+    }
+
+    const { data: counts, error: countError } = await supabase
+      .from("passenger_counts")
+      .select("*");
+
+    if (countError) {
+      console.error("Error fetching passenger counts for logging:", countError);
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const logs = activeBuses.map((bus) => {
+      const count = counts?.find((c) => c.channel_name?.includes(bus.bus_name)) || null;
+      return {
+        bus_name: bus.bus_name,
+        channel_id: count?.channel_id || null,
+        current_count: count?.current_count || 0,
+        total_enters: count?.total_enters || 0,
+        total_exits: count?.total_exits || 0,
+        logged_at: now,
+      };
+    });
+
+    const { error: insertError } = await supabase
+      .from("passenger_count_logs")
+      .insert(logs);
+
+    if (insertError) {
+      console.error("Error inserting passenger logs:", insertError);
+    } else {
+      console.log(`Logged ${logs.length} passenger snapshots`);
+      fetchPassengerLogs();
+    }
+  }, [fetchPassengerLogs]);
+
+  const handleToggleLogging = useCallback((enabled: boolean) => {
+    setLoggingActive(enabled);
+    if (enabled) {
+      // Log immediately, then every 30 minutes
+      logPassengerSnapshot();
+      loggingIntervalRef.current = setInterval(logPassengerSnapshot, 30 * 60 * 1000);
+      toast.success("Passenger logging started (every 30 minutes)");
+    } else {
+      if (loggingIntervalRef.current) {
+        clearInterval(loggingIntervalRef.current);
+        loggingIntervalRef.current = null;
+      }
+      toast.success("Passenger logging stopped");
+    }
+  }, [logPassengerSnapshot]);
+
+  // Cleanup interval on unmount
+  useEffect(() => {
+    return () => {
+      if (loggingIntervalRef.current) {
+        clearInterval(loggingIntervalRef.current);
+      }
+    };
+  }, []);
+
+  const handleClearLogs = async () => {
+    const { error } = await supabase
+      .from("passenger_count_logs")
+      .delete()
+      .neq("id", "00000000-0000-0000-0000-000000000000"); // delete all
+
+    if (error) {
+      console.error("Error clearing logs:", error);
+      toast.error("Failed to clear logs");
+    } else {
+      toast.success("All logs cleared");
+      setPassengerLogs([]);
+    }
+  };
+
+
   if (!user || !isAdmin) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -277,252 +394,360 @@ const AdminManagement = () => {
           </Button>
         </div>
 
-        {/* Dashboard Control Card */}
-        <Card className="border-2 border-primary/20">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Power className="h-5 w-5" />
-              Dashboard Control
-            </CardTitle>
-            <CardDescription>
-              Enable or disable the user dashboard for all non-admin users
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
-              <div className="space-y-1">
-                <Label htmlFor="dashboard-toggle" className="text-sm font-medium">
-                  User Dashboard
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  {userDashboardEnabled 
-                    ? "Users can access the dashboard and track buses" 
-                    : "Users will see a disabled message when accessing the dashboard"
-                  }
-                </p>
-              </div>
-              <Switch
-                id="dashboard-toggle"
-                checked={userDashboardEnabled}
-                onCheckedChange={handleToggleDashboard}
-              />
-            </div>
-          </CardContent>
-        </Card>
+        <Tabs defaultValue="management" className="w-full">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="management">Management</TabsTrigger>
+            <TabsTrigger value="buses">Bus Config</TabsTrigger>
+            <TabsTrigger value="logging" className="flex items-center gap-1">
+              <ClipboardList className="h-3.5 w-3.5" />
+              Data Logging
+            </TabsTrigger>
+          </TabsList>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Admin Management</CardTitle>
-            <CardDescription>
-              Manage user roles and permissions
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Add Admin Form */}
-            <div className="border-b border-border pb-6">
-              <h3 className="text-sm font-semibold text-foreground mb-4">Add Admin Role</h3>
-              <form onSubmit={handleAddAdmin} className="flex gap-2">
-                <Input
-                  placeholder="Enter user ID (from auth.users)"
-                  value={newUserId}
-                  onChange={(e) => setNewUserId(e.target.value)}
-                  className="flex-1"
-                />
-                <Button type="submit" disabled={loading}>
-                  <UserPlus className="h-4 w-4 mr-2" />
-                  Add Admin
-                </Button>
-              </form>
-              <p className="text-xs text-muted-foreground mt-2">
-                Your user ID: <code className="bg-muted px-1 py-0.5 rounded">{user.id}</code>
-              </p>
-            </div>
-
-            {/* User Roles List */}
-            <div>
-              <h3 className="text-sm font-semibold text-foreground mb-4">Current User Roles</h3>
-              {userRoles.length > 0 ? (
-                <div className="space-y-2">
-                  {userRoles.map((userRole) => (
-                    <div
-                      key={userRole.id}
-                      className="flex items-center justify-between p-3 bg-muted rounded-lg"
-                    >
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-foreground">
-                          User ID: {userRole.user_id}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Role: <span className="font-semibold">{userRole.role}</span>
-                        </p>
-                      </div>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => handleRemoveRole(userRole.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
+          <TabsContent value="management" className="space-y-6">
+            {/* Dashboard Control Card */}
+            <Card className="border-2 border-primary/20">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Power className="h-5 w-5" />
+                  Dashboard Control
+                </CardTitle>
+                <CardDescription>
+                  Enable or disable the user dashboard for all non-admin users
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
+                  <div className="space-y-1">
+                    <Label htmlFor="dashboard-toggle" className="text-sm font-medium">
+                      User Dashboard
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      {userDashboardEnabled 
+                        ? "Users can access the dashboard and track buses" 
+                        : "Users will see a disabled message when accessing the dashboard"
+                      }
+                    </p>
+                  </div>
+                  <Switch
+                    id="dashboard-toggle"
+                    checked={userDashboardEnabled}
+                    onCheckedChange={handleToggleDashboard}
+                  />
                 </div>
-              ) : (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  No user roles found
-                </p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
 
-        {/* Bus Seat Configuration Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Bus className="h-5 w-5" />
-              Bus Seat Configuration
-            </CardTitle>
-            <CardDescription>
-              Manage maximum passenger capacity for each bus. Passenger counts from ThingsBoard are checked against these limits.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Add Bus Configuration Form */}
-            <div className="border-b border-border pb-6">
-              <h3 className="text-sm font-semibold text-foreground mb-4">Add New Bus</h3>
-              <form onSubmit={handleAddBusConfig} className="flex gap-2">
-                <Input
-                  placeholder="Enter bus name (e.g. Bus 101)"
-                  value={newBusName}
-                  onChange={(e) => setNewBusName(e.target.value)}
-                  className="flex-1"
-                />
-                <Input
-                  type="number"
-                  placeholder="Max passengers"
-                  value={newMaxPassengers}
-                  onChange={(e) => setNewMaxPassengers(e.target.value)}
-                  className="w-32"
-                  min="1"
-                />
-                <Button type="submit" disabled={loading}>
-                  <Bus className="h-4 w-4 mr-2" />
-                  Add Bus
-                </Button>
-              </form>
-            </div>
+            <Card>
+              <CardHeader>
+                <CardTitle>Admin Management</CardTitle>
+                <CardDescription>
+                  Manage user roles and permissions
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="border-b border-border pb-6">
+                  <h3 className="text-sm font-semibold text-foreground mb-4">Add Admin Role</h3>
+                  <form onSubmit={handleAddAdmin} className="flex gap-2">
+                    <Input
+                      placeholder="Enter user ID (from auth.users)"
+                      value={newUserId}
+                      onChange={(e) => setNewUserId(e.target.value)}
+                      className="flex-1"
+                    />
+                    <Button type="submit" disabled={loading}>
+                      <UserPlus className="h-4 w-4 mr-2" />
+                      Add Admin
+                    </Button>
+                  </form>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Your user ID: <code className="bg-muted px-1 py-0.5 rounded">{user.id}</code>
+                  </p>
+                </div>
 
-            {/* Bus Configurations List */}
-            <div>
-              <h3 className="text-sm font-semibold text-foreground mb-4">Current Bus Configurations</h3>
-              {busConfigs.length > 0 ? (
-                <div className="space-y-2">
-                  {busConfigs.map((config) => (
-                    <div
-                      key={config.id}
-                      className={`flex items-center justify-between p-3 rounded-lg ${config.is_active ? 'bg-muted' : 'bg-muted/50 opacity-70'}`}
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-medium text-foreground">
-                            {config.bus_name}
-                          </p>
-                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${config.is_active ? 'bg-primary/10 text-primary' : 'bg-destructive/10 text-destructive'}`}>
-                            {config.is_active ? "Active" : "Inactive"}
-                          </span>
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground mb-4">Current User Roles</h3>
+                  {userRoles.length > 0 ? (
+                    <div className="space-y-2">
+                      {userRoles.map((userRole) => (
+                        <div
+                          key={userRole.id}
+                          className="flex items-center justify-between p-3 bg-muted rounded-lg"
+                        >
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-foreground">
+                              User ID: {userRole.user_id}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Role: <span className="font-semibold">{userRole.role}</span>
+                            </p>
+                          </div>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => handleRemoveRole(userRole.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
-                        {editingBus === config.id ? (
-                          <div className="flex items-center gap-2 mt-2">
-                            <Input
-                              type="number"
-                              value={editMaxPassengers}
-                              onChange={(e) => setEditMaxPassengers(e.target.value)}
-                              className="w-32 h-8"
-                              min="1"
-                              placeholder="Max passengers"
-                            />
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                      No user roles found
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-primary/5 border-primary/20">
+              <CardHeader>
+                <CardTitle className="text-sm">How to Use</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm text-muted-foreground">
+                <p>1. Users must first sign up through the /auth page</p>
+                <p>2. Copy their user ID from the browser console after login (auth.uid())</p>
+                <p>3. Add their user ID here to grant admin privileges</p>
+                <p>4. Admins can view all passenger locations and bus ETAs</p>
+                <p>5. Configure bus capacities to receive alerts when passenger count exceeds limits</p>
+                <p>6. Use the dashboard toggle to temporarily disable user access</p>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="buses" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Bus className="h-5 w-5" />
+                  Bus Seat Configuration
+                </CardTitle>
+                <CardDescription>
+                  Manage maximum passenger capacity for each bus.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="border-b border-border pb-6">
+                  <h3 className="text-sm font-semibold text-foreground mb-4">Add New Bus</h3>
+                  <form onSubmit={handleAddBusConfig} className="flex gap-2">
+                    <Input
+                      placeholder="Enter bus name (e.g. Bus 101)"
+                      value={newBusName}
+                      onChange={(e) => setNewBusName(e.target.value)}
+                      className="flex-1"
+                    />
+                    <Input
+                      type="number"
+                      placeholder="Max passengers"
+                      value={newMaxPassengers}
+                      onChange={(e) => setNewMaxPassengers(e.target.value)}
+                      className="w-32"
+                      min="1"
+                    />
+                    <Button type="submit" disabled={loading}>
+                      <Bus className="h-4 w-4 mr-2" />
+                      Add Bus
+                    </Button>
+                  </form>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground mb-4">Current Bus Configurations</h3>
+                  {busConfigs.length > 0 ? (
+                    <div className="space-y-2">
+                      {busConfigs.map((config) => (
+                        <div
+                          key={config.id}
+                          className={`flex items-center justify-between p-3 rounded-lg ${config.is_active ? 'bg-muted' : 'bg-muted/50 opacity-70'}`}
+                        >
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-medium text-foreground">
+                                {config.bus_name}
+                              </p>
+                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${config.is_active ? 'bg-primary/10 text-primary' : 'bg-destructive/10 text-destructive'}`}>
+                                {config.is_active ? "Active" : "Inactive"}
+                              </span>
+                            </div>
+                            {editingBus === config.id ? (
+                              <div className="flex items-center gap-2 mt-2">
+                                <Input
+                                  type="number"
+                                  value={editMaxPassengers}
+                                  onChange={(e) => setEditMaxPassengers(e.target.value)}
+                                  className="w-32 h-8"
+                                  min="1"
+                                  placeholder="Max passengers"
+                                />
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => handleUpdateBusConfig(config.id)}
+                                >
+                                  <Check className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    setEditingBus(null);
+                                    setEditMaxPassengers("");
+                                  }}
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <p className="text-xs text-muted-foreground">
+                                Max Passengers: <span className="font-semibold">{config.max_passengers}</span>
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex gap-2 items-center">
+                            <div className="flex items-center gap-2">
+                              <Label htmlFor={`bus-status-${config.id}`} className="text-xs text-muted-foreground sr-only">
+                                Status
+                              </Label>
+                              <Switch
+                                id={`bus-status-${config.id}`}
+                                checked={config.is_active}
+                                onCheckedChange={() => handleToggleBusStatus(config.id, config.is_active)}
+                              />
+                            </div>
+                            {editingBus !== config.id && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setEditingBus(config.id);
+                                  setEditMaxPassengers(config.max_passengers.toString());
+                                }}
+                              >
+                                <Edit2 className="h-4 w-4" />
+                              </Button>
+                            )}
                             <Button
+                              variant="destructive"
                               size="sm"
-                              variant="ghost"
-                              onClick={() => handleUpdateBusConfig(config.id)}
+                              onClick={() => handleDeleteBusConfig(config.id)}
+                              disabled={editingBus === config.id}
                             >
-                              <Check className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                setEditingBus(null);
-                                setEditMaxPassengers("");
-                              }}
-                            >
-                              <X className="h-4 w-4" />
+                              <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
-                        ) : (
-                          <p className="text-xs text-muted-foreground">
-                            Max Passengers: <span className="font-semibold">{config.max_passengers}</span>
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex gap-2 items-center">
-                        <div className="flex items-center gap-2">
-                          <Label htmlFor={`bus-status-${config.id}`} className="text-xs text-muted-foreground sr-only">
-                            Status
-                          </Label>
-                          <Switch
-                            id={`bus-status-${config.id}`}
-                            checked={config.is_active}
-                            onCheckedChange={() => handleToggleBusStatus(config.id, config.is_active)}
-                          />
                         </div>
-                        {editingBus !== config.id && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setEditingBus(config.id);
-                              setEditMaxPassengers(config.max_passengers.toString());
-                            }}
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </Button>
-                        )}
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => handleDeleteBusConfig(config.id)}
-                          disabled={editingBus === config.id}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
+                      ))}
                     </div>
-                  ))}
+                  ) : (
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                      No bus configurations found
+                    </p>
+                  )}
                 </div>
-              ) : (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  No bus configurations found
-                </p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-        {/* Instructions Card */}
-        <Card className="bg-primary/5 border-primary/20">
-          <CardHeader>
-            <CardTitle className="text-sm">How to Use</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm text-muted-foreground">
-            <p>1. Users must first sign up through the /auth page</p>
-            <p>2. Copy their user ID from the browser console after login (auth.uid())</p>
-            <p>3. Add their user ID here to grant admin privileges</p>
-            <p>4. Admins can view all passenger locations and bus ETAs</p>
-            <p>5. Configure bus capacities to receive alerts when passenger count exceeds limits</p>
-            <p>6. Use the dashboard toggle to temporarily disable user access</p>
-          </CardContent>
-        </Card>
+          <TabsContent value="logging" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ClipboardList className="h-5 w-5" />
+                  Passenger Data Logging
+                </CardTitle>
+                <CardDescription>
+                  Log passenger counts every 30 minutes for active buses. Logging automatically excludes inactive buses.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
+                  <div className="space-y-1">
+                    <Label htmlFor="logging-toggle" className="text-sm font-medium">
+                      Auto-Logging
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      {loggingActive 
+                        ? "Logging passenger counts every 30 minutes" 
+                        : "Logging is paused — no new entries will be recorded"
+                      }
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {loggingActive ? (
+                      <Square className="h-4 w-4 text-destructive" />
+                    ) : (
+                      <Play className="h-4 w-4 text-primary" />
+                    )}
+                    <Switch
+                      id="logging-toggle"
+                      checked={loggingActive}
+                      onCheckedChange={handleToggleLogging}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={logPassengerSnapshot}
+                      disabled={!loggingActive}
+                    >
+                      Log Now
+                    </Button>
+                    <span className="text-xs text-muted-foreground">
+                      {passengerLogs.length} entries recorded
+                    </span>
+                  </div>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={handleClearLogs}
+                    disabled={passengerLogs.length === 0}
+                  >
+                    <Trash2 className="h-4 w-4 mr-1" />
+                    Clear All Logs
+                  </Button>
+                </div>
+
+                {passengerLogs.length > 0 ? (
+                  <div className="border rounded-lg overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Bus</TableHead>
+                          <TableHead className="text-center">Current</TableHead>
+                          <TableHead className="text-center">Enters</TableHead>
+                          <TableHead className="text-center">Exits</TableHead>
+                          <TableHead>Logged At</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {passengerLogs.map((log) => (
+                          <TableRow key={log.id}>
+                            <TableCell className="font-medium">{log.bus_name}</TableCell>
+                            <TableCell className="text-center">{log.current_count}</TableCell>
+                            <TableCell className="text-center">{log.total_enters}</TableCell>
+                            <TableCell className="text-center">{log.total_exits}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {new Date(log.logged_at).toLocaleString()}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-8">
+                    No logs recorded yet. Enable logging and wait for the first snapshot.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );
