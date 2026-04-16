@@ -272,7 +272,107 @@ const AdminManagement = () => {
     }
   };
 
-  if (!user || !isAdmin) {
+  const fetchPassengerLogs = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("passenger_count_logs")
+      .select("*")
+      .order("logged_at", { ascending: false })
+      .limit(200);
+
+    if (error) {
+      console.error("Error fetching passenger logs:", error);
+    } else {
+      setPassengerLogs(data || []);
+    }
+  }, []);
+
+  const logPassengerSnapshot = useCallback(async () => {
+    // Get all active buses and their current passenger counts
+    const { data: activeBuses, error: busError } = await supabase
+      .from("bus_configurations")
+      .select("*")
+      .eq("is_active", true);
+
+    if (busError || !activeBuses?.length) {
+      console.log("No active buses to log");
+      return;
+    }
+
+    const { data: counts, error: countError } = await supabase
+      .from("passenger_counts")
+      .select("*");
+
+    if (countError) {
+      console.error("Error fetching passenger counts for logging:", countError);
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const logs = activeBuses.map((bus) => {
+      const count = counts?.find((c) => c.channel_name?.includes(bus.bus_name)) || null;
+      return {
+        bus_name: bus.bus_name,
+        channel_id: count?.channel_id || null,
+        current_count: count?.current_count || 0,
+        total_enters: count?.total_enters || 0,
+        total_exits: count?.total_exits || 0,
+        logged_at: now,
+      };
+    });
+
+    const { error: insertError } = await supabase
+      .from("passenger_count_logs")
+      .insert(logs);
+
+    if (insertError) {
+      console.error("Error inserting passenger logs:", insertError);
+    } else {
+      console.log(`Logged ${logs.length} passenger snapshots`);
+      fetchPassengerLogs();
+    }
+  }, [fetchPassengerLogs]);
+
+  const handleToggleLogging = useCallback((enabled: boolean) => {
+    setLoggingActive(enabled);
+    if (enabled) {
+      // Log immediately, then every 30 minutes
+      logPassengerSnapshot();
+      loggingIntervalRef.current = setInterval(logPassengerSnapshot, 30 * 60 * 1000);
+      toast.success("Passenger logging started (every 30 minutes)");
+    } else {
+      if (loggingIntervalRef.current) {
+        clearInterval(loggingIntervalRef.current);
+        loggingIntervalRef.current = null;
+      }
+      toast.success("Passenger logging stopped");
+    }
+  }, [logPassengerSnapshot]);
+
+  // Cleanup interval on unmount
+  useEffect(() => {
+    return () => {
+      if (loggingIntervalRef.current) {
+        clearInterval(loggingIntervalRef.current);
+      }
+    };
+  }, []);
+
+  const handleClearLogs = async () => {
+    const { error } = await supabase
+      .from("passenger_count_logs")
+      .delete()
+      .neq("id", "00000000-0000-0000-0000-000000000000"); // delete all
+
+    if (error) {
+      console.error("Error clearing logs:", error);
+      toast.error("Failed to clear logs");
+    } else {
+      toast.success("All logs cleared");
+      setPassengerLogs([]);
+    }
+  };
+
+
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center space-y-2">
